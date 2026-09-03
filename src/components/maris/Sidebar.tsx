@@ -1,18 +1,18 @@
 // MARIS — Command sidebar with navigation, stats, and layer controls
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import {
-  AlertTriangle,
   Anchor,
   BarChart3,
-  Binary,
   ChevronDown,
   ChevronRight,
   Compass,
   Crosshair,
   FileText,
+  Globe,
   Layers,
-  Map,
   Radar,
+  ScanEye,
   Ship,
   Target,
   Thermometer,
@@ -46,6 +46,11 @@ const NAV_ITEMS: {
   { id: "report", label: "Report", icon: FileText },
 ];
 
+const EXTERNAL_VIEWS = [
+  { path: "/sar", label: "SAR Analysis", icon: ScanEye, desc: "Scientific imagery viewer" },
+  { path: "/3d", label: "3D Intelligence", icon: Globe, desc: "Geospatial globe" },
+];
+
 export default function Sidebar({
   layers,
   onLayerToggle,
@@ -57,6 +62,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [layersOpen, setLayersOpen] = useState(true);
+  const navigate = useNavigate();
 
   return (
     <aside
@@ -194,6 +200,29 @@ export default function Sidebar({
             )}
           </div>
 
+          {/* External Views */}
+          <div className="border-b border-zinc-800 px-1 py-2">
+            <h2 className="mb-1 px-2 text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">
+              Visualization
+            </h2>
+            {EXTERNAL_VIEWS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-[11px] text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors"
+                >
+                  <Icon className="size-3.5 shrink-0" />
+                  <div className="min-w-0">
+                    <div>{item.label}</div>
+                    <div className="text-[8px] text-zinc-600">{item.desc}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Demo Button */}
           <div className="mt-auto px-3 py-3">
             <button
@@ -237,6 +266,20 @@ export default function Sidebar({
                     ? "bg-zinc-800 text-zinc-100"
                     : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
                 )}
+                title={item.label}
+              >
+                <Icon className="size-4" />
+              </button>
+            );
+          })}
+          <div className="my-1 h-px w-6 bg-zinc-800" />
+          {EXTERNAL_VIEWS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className="flex size-8 items-center justify-center rounded text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 transition-colors"
                 title={item.label}
               >
                 <Icon className="size-4" />

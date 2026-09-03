@@ -10,6 +10,10 @@ import type {
   OilDriftResult,
   HyperspectralResult,
   TimelineEvent,
+  SarScene,
+  SarDetectionRegion,
+  SarAnalysisResult,
+  SatelliteObservation,
 } from "./types";
 
 // ─── INCIDENT ───────────────────────────────────────────────────────
@@ -698,3 +702,124 @@ export const DEMO_TIMELINE: TimelineEvent[] = [
   { time: "10:04", event: "Vessel behaviour anomaly indicators compiled", category: "analysis" },
   { time: "10:05", event: "Investigation report generated", category: "report" },
 ];
+
+// ─── SAR SCENE ─────────────────────────────────────────────────────
+
+export const DEMO_SAR_SCENE: SarScene = {
+  id: "SAR-2026-0902-001",
+  sceneId: "S1A_IW_GRDH_1SDV_20260902T041234_20260902T041259_064521_08A1B3",
+  acquisitionTime: "2026-09-02T04:12:34Z",
+  satellite: "Sentinel-1A",
+  satelliteId: "S1A",
+  polarization: "VV + VH",
+  resolution: 10,
+  resolutionUnit: "meters",
+  mode: "IW (Interferometric Wide Swath)",
+  orbit: "Descending — Orbit 64521",
+  geographicCenter: [12.0471, 86.9718],
+  boundingBox: [
+    [11.85, 86.72],
+    [12.25, 87.22],
+  ],
+  imageWidth: 256,
+  imageHeight: 168,
+  processingLevel: "Level-1 GRD (Ground Range Detected)",
+  processingDate: "2026-09-02T06:45:00Z",
+  dataSource: "ESA Copernicus Open Access Hub — Demonstration Data",
+  mode_label: "demonstration",
+};
+
+// ─── SAR DETECTION REGIONS ─────────────────────────────────────────
+
+export const DEMO_SAR_DETECTIONS: SarDetectionRegion[] = [
+  {
+    id: "DET-001",
+    label: "Possible oil slick — primary candidate",
+    confidence: 91,
+    polygon: DEMO_INCIDENT.polygon.coordinates,
+    areaKm2: 14.7,
+    lengthKm: 8.2,
+    center: DEMO_INCIDENT.polygon.center,
+    classification: "possible_oil",
+    confidenceFactors: [
+      "Low backscatter anomaly in SAR image consistent with oil dampening",
+      "Elongated shape aligned with prevailing current direction",
+      "No natural phenomena or low-wind zones identified in vicinity",
+      "Vessel activity detected in probable source corridor",
+      "Sea surface temperature within oil-detection operational range",
+    ],
+  },
+  {
+    id: "DET-002",
+    label: "Low-wind area — likely natural",
+    confidence: 23,
+    polygon: [
+      [12.11, 87.06],
+      [12.12, 87.08],
+      [12.10, 87.09],
+      [12.09, 87.07],
+      [12.11, 87.06],
+    ],
+    areaKm2: 3.2,
+    lengthKm: 2.1,
+    center: [12.105, 87.075],
+    classification: "low_wind",
+    confidenceFactors: [
+      "Dark region with uniform texture — consistent with low-wind zone",
+      "No elongation pattern typical of oil slicks",
+      "Area correlates with known wind shadow region",
+    ],
+  },
+];
+
+// ─── SAR ANALYSIS RESULT ───────────────────────────────────────────
+
+export const DEMO_SAR_ANALYSIS: SarAnalysisResult = {
+  sceneId: DEMO_SAR_SCENE.sceneId,
+  detections: DEMO_SAR_DETECTIONS,
+  processingTime: 4.7,
+  preprocessingSteps: [
+    "Thermal noise removal",
+    "Radiometric calibration",
+    "Speckle filter (Lee, 5×5 kernel)",
+    "Sea/background segmentation via Otsu threshold",
+    "Dark-region candidate extraction",
+    "Shape analysis — elongation, fractal dimension",
+    "Contextual false-positive screening",
+    "Confidence scoring",
+  ],
+  falsePositiveScreening: [
+    "Low-wind areas: 1 candidate screened",
+    "Natural seepage: none identified",
+    "Algal bloom signatures: none detected",
+    "Ship wake patterns: 0 matches",
+    "Current boundary artefacts: none identified",
+  ],
+  mode: "demonstration",
+};
+
+// ─── SATELLITE OBSERVATION ─────────────────────────────────────────
+
+export const DEMO_SATELLITE_OBSERVATION: SatelliteObservation = {
+  id: "OBS-2026-0902-001",
+  satellite: "Sentinel-1A",
+  satelliteId: "S1A",
+  timestamp: "2026-09-02T04:12:34Z",
+  orbitInclination: 98.18,
+  orbitAltitude: 693,
+  groundTrack: [
+    [15.2, 85.8],
+    [14.5, 86.1],
+    [13.8, 86.4],
+    [13.1, 86.7],
+    [12.4, 87.0],
+    [11.7, 87.3],
+    [11.0, 87.6],
+    [10.3, 87.9],
+  ],
+  swathCenter: [12.0471, 86.9718],
+  swathWidth: 80,
+  swathLength: 250,
+  passDirection: "descending",
+  mode: "demonstration",
+};

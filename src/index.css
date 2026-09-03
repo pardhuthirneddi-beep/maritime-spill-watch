@@ -124,3 +124,49 @@
     cursor: pointer;
   }
 }
+
+/* 3D Globe canvas */
+.globe-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.globe-canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* SAR Viewer canvas */
+.sar-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Leaflet popup overrides */
+.maris-popup .leaflet-popup-content-wrapper {
+  background: #0a0b10;
+  border: 1px solid #27272a;
+  border-radius: 4px;
+  color: #e4e4e7;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.maris-popup .leaflet-popup-tip {
+  background: #0a0b10;
+  border: 1px solid #27272a;
+}
+
+.maris-popup .leaflet-popup-close-button {
+  color: #71717a;
+}
+
+/* Smooth scroll for panels */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Three.js renderer */
+.globe-canvas canvas:focus {
+  outline: none;
+}

@@ -1,5 +1,5 @@
 // maris — Landing page
-import { ArrowRight, Globe, Layers, Radio, Shield, Target, Wind } from "lucide-react";
+import { ArrowRight, Globe, Layers, Radio, ScanEye, Shield, Target, Wind } from "lucide-react";
 import { useNavigate } from "react-router";
 
 const FEATURES = [
@@ -86,7 +86,7 @@ export default function Landing() {
               platform.
             </p>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={() => navigate("/app")}
                 className="inline-flex items-center gap-2 rounded bg-zinc-100 px-4 py-2 text-[11px] font-medium text-zinc-900 hover:bg-white transition-colors"
@@ -94,6 +94,22 @@ export default function Landing() {
                 Launch Investigation
                 <ArrowRight className="size-3.5" />
               </button>
+              <button
+                onClick={() => navigate("/sar")}
+                className="inline-flex items-center gap-2 rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-[11px] font-medium text-zinc-300 hover:border-zinc-500 transition-colors"
+              >
+                <ScanEye className="size-3.5" />
+                SAR Analysis
+              </button>
+              <button
+                onClick={() => navigate("/3d")}
+                className="inline-flex items-center gap-2 rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-[11px] font-medium text-zinc-300 hover:border-zinc-500 transition-colors"
+              >
+                <Globe className="size-3.5" />
+                3D Intelligence
+              </button>
+            </div>
+            <div className="mt-3">
               <span className="text-[9px] text-zinc-600">
                 No login required for demo
               </span>

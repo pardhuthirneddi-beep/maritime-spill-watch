@@ -172,3 +172,85 @@ export type PanelView =
   | "timeline"
   | "report"
   | "satellite";
+
+// ─── SAR IMAGERY TYPES ─────────────────────────────────────────────
+
+export interface SarScene {
+  id: string;
+  sceneId: string;
+  acquisitionTime: string;
+  satellite: string;
+  satelliteId: string;
+  polarization: string;
+  resolution: number;
+  resolutionUnit: string;
+  mode: string;
+  orbit: string;
+  geographicCenter: LatLon;
+  boundingBox: [LatLon, LatLon];
+  imageWidth: number;
+  imageHeight: number;
+  processingLevel: string;
+  processingDate: string;
+  dataSource: string;
+  mode_label: "demonstration" | "real";
+}
+
+export interface SarDetectionRegion {
+  id: string;
+  label: string;
+  confidence: number;
+  polygon: LatLon[];
+  areaKm2: number;
+  lengthKm: number;
+  center: LatLon;
+  classification: "possible_oil" | "natural_seep" | "low_wind" | "algal_bloom" | "look_alike";
+  confidenceFactors: string[];
+}
+
+export interface SarAnalysisResult {
+  sceneId: string;
+  detections: SarDetectionRegion[];
+  processingTime: number;
+  preprocessingSteps: string[];
+  falsePositiveScreening: string[];
+  mode: "demonstration";
+}
+
+// ─── SATELLITE OBSERVATION TYPES ───────────────────────────────────
+
+export interface SatelliteObservation {
+  id: string;
+  satellite: string;
+  satelliteId: string;
+  timestamp: string;
+  orbitInclination: number;
+  orbitAltitude: number;
+  groundTrack: LatLon[];
+  swathCenter: LatLon;
+  swathWidth: number;
+  swathLength: number;
+  passDirection: "ascending" | "descending";
+  mode: "demonstration";
+}
+
+// ─── 3D GLOBE LAYER TYPES ──────────────────────────────────────────
+
+export type Globe3dLayerId =
+  | "globe_vessels"
+  | "globe_tracks"
+  | "globe_spill"
+  | "globe_satellite"
+  | "globe_boundaries"
+  | "globe_grid"
+  | "globe_detection_zones";
+
+export interface Globe3dLayer {
+  id: Globe3dLayerId;
+  label: string;
+  enabled: boolean;
+}
+
+// ─── MAIN APP VIEW TYPE ────────────────────────────────────────────
+
+export type AppView = "overview" | "sar" | "intelligence3d";
