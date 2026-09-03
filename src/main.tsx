@@ -17,8 +17,8 @@ const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 // Simple loading fallback for route transitions
 function RouteLoading() {
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-pulse text-muted-foreground">Loading...</div>
+    <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+      <div className="text-zinc-500 text-sm animate-pulse">Loading MARIS...</div>
     </div>
   );
 }
@@ -60,14 +60,16 @@ class RootErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
+        <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100 p-6">
           <div className="max-w-lg text-center">
-            <p className="text-sm font-semibold">Preview runtime error</p>
-            <p className="mt-2 text-xs text-muted-foreground break-words">
+            <p className="text-sm font-semibold text-zinc-200">
+              Application Error
+            </p>
+            <p className="mt-2 text-xs text-zinc-400 break-words">
               {this.state.message}
             </p>
             {this.state.stack && (
-              <pre className="mt-3 text-left text-[10px] leading-4 text-muted-foreground/80 max-h-40 overflow-auto rounded border border-border/60 p-2">
+              <pre className="mt-3 text-left text-[10px] leading-4 text-zinc-600 max-h-40 overflow-auto rounded border border-zinc-800 p-2">
                 {this.state.stack}
               </pre>
             )}
@@ -80,8 +82,6 @@ class RootErrorBoundary extends React.Component<
 }
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
-
-
 
 function RouteSyncer() {
   const location = useLocation();
@@ -106,7 +106,6 @@ function RouteSyncer() {
   return null;
 }
 
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
@@ -118,11 +117,9 @@ createRoot(document.getElementById("root")!).render(
           <RouteSyncer />
           <Suspense fallback={<RouteLoading />}>
             <Routes>
+              {/* MARIS — root goes to landing, /app goes to dashboard */}
               <Route path="/" element={<Landing />} />
-              <Route
-                path="/auth"
-                element={<AuthPage redirectAfterAuth="/dashboard" />}
-              />
+              <Route path="/app" element={<Dashboard />} />
               <Route
                 path="/dashboard"
                 element={
@@ -130,6 +127,10 @@ createRoot(document.getElementById("root")!).render(
                     <Dashboard />
                   </RequireAuth>
                 }
+              />
+              <Route
+                path="/auth"
+                element={<AuthPage redirectAfterAuth="/dashboard" />}
               />
               <Route path="*" element={<NotFound />} />
             </Routes>
