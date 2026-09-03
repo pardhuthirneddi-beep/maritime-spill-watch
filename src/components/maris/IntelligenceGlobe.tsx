@@ -1,6 +1,8 @@
 // maris — 3D Geospatial Intelligence Globe
 // Maritime command center visualization using CesiumJS
 import { useRef, useEffect, useState, useCallback } from "react";
+
+// Cesium base URL is set in index.html <script> tag before module loads
 import * as Cesium from "cesium";
 import {
   ArrowLeft,
@@ -33,10 +35,6 @@ import type {
   Globe3dLayer,
   Globe3dLayerId,
 } from "@/data/types";
-
-// Set Cesium Ion token (free tier works without token for basic imagery)
-// @ts-expect-error - Cesium global setup
-window.CESIUM_BASE_URL = "/static/cesium/";
 
 const CARTO_API_KEY = "cb1_2u58_1_bf57649a9ebd93a4418be433";
 
@@ -105,9 +103,6 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   // ── Initialize Cesium viewer ───────────────────────────────────
   useEffect(() => {
     if (!cesiumContainerRef.current || viewerRef.current) return;
-
-    // @ts-expect-error - Cesium global
-    window.CESIUM_BASE_URL = "/static/cesium/";
 
     const viewer = new Cesium.Viewer(cesiumContainerRef.current, {
       baseLayerPicker: false,
@@ -755,7 +750,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
         {/* ─── CESIUM GLOBE ──────────────────────────────────── */}
         <main className="flex-1 relative">
-          <div ref={cesiumContainerRef} className="absolute inset-0 cesium-viewer" />
+          <div ref={cesiumContainerRef} className="absolute inset-0 cesium-container" />
 
           {/* Compass nav */}
           <div className="absolute bottom-20 left-6 z-10">
