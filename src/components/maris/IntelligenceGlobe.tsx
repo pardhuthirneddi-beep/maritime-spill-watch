@@ -38,6 +38,19 @@ import type {
 // @ts-expect-error - Cesium global setup
 window.CESIUM_BASE_URL = "/static/cesium/";
 
+const CARTO_API_KEY = "cb1_2u58_1_bf57649a9ebd93a4418be433";
+
+// Entity tag prefixes for layer visibility control
+const LAYER_ENTITY_PREFIXES: Record<Globe3dLayerId, string[]> = {
+  globe_vessels: ["vessel-"],
+  globe_tracks: ["track-"],
+  globe_spill: ["spill-"],
+  globe_satellite: ["satellite-", "satellite-track-", "satellite-swath-"],
+  globe_boundaries: ["coastline-"],
+  globe_grid: ["maritime-zone-"],
+  globe_detection_zones: ["detection-zone-"],
+};
+
 interface IntelligenceGlobeProps {
   onBack: () => void;
 }
@@ -47,6 +60,7 @@ interface IntelligenceGlobeProps {
 export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const cesiumContainerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
+  const entityMapRef = useRef<Map<string, Cesium.Entity>>(new Map());
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [vesselFilter, setVesselFilter] = useState<"all" | "near" | "watch">("all");
@@ -88,11 +102,10 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     return true;
   });
 
-  // Initialize Cesium viewer
+  // ── Initialize Cesium viewer ───────────────────────────────────
   useEffect(() => {
     if (!cesiumContainerRef.current || viewerRef.current) return;
 
-    // Set base URL for Cesium assets
     // @ts-expect-error - Cesium global
     window.CESIUM_BASE_URL = "/static/cesium/";
 
@@ -112,37 +125,50 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       shouldAnimate: true,
     });
 
-    // Replace default imagery with OSM
+    // ── Dark Carto basemap ────────────────────────────────────────
     viewer.imageryLayers.removeAll();
     viewer.imageryLayers.addImageryProvider(
       new Cesium.UrlTemplateImageryProvider({
-        url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        subdomains: ["a", "b", "c"],
+        url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+        subdomains: ["a", "b", "c", "d"],
         maximumLevel: 18,
+        credit: new Cesium.Credit("© CARTO © OpenStreetMap contributors"),
       })
     );
 
-    // Darken the globe for maritime theme
+    // ── Dark scene styling ────────────────────────────────────────
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020508");
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a1628");
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#071320");
 
-    // Enable atmosphere
-    if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
-    if (viewer.scene.skyBox) viewer.scene.skyBox.show = false;
+    // Atmosphere
+    if (viewer.scene.skyAtmosphere) {
+      viewer.scene.skyAtmosphere.show = true;
+    }
+    if (viewer.scene.skyBox) {
+      viewer.scene.skyBox.show = false;
+    }
 
-    // Enable fog for depth
+    // Fog for depth/atmosphere
     viewer.scene.fog.enabled = true;
-    viewer.scene.fog.density = 0.0002;
+    viewer.scene.fog.density = 0.00015;
+    viewer.scene.fog.screenSpaceErrorFactor = 2.0;
 
-    // Smooth camera controls
+    // Globe lighting — darken the night side
+    viewer.scene.globe.enableLighting = false;
+
+    // Smooth camera near/far for ocean viewing
+    viewer.scene.camera.frustum.near = 100.0;
+    viewer.scene.camera.frustum.far = 20000000.0;
+
+    // ── Initial camera — orbital view of Bay of Bengal ────────────
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(87.0, 12.0, 2500000),
+      destination: Cesium.Cartesian3.fromDegrees(87.0, 12.0, 2800000),
       orientation: {
         heading: Cesium.Math.toRadians(10),
         pitch: Cesium.Math.toRadians(-35),
         roll: 0,
       },
-      duration: 2,
+      duration: 2.5,
     });
 
     viewerRef.current = viewer;
@@ -155,82 +181,143 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     };
   }, []);
 
-  // Add entities when viewer is ready
+  // ── Add all entities when viewer is ready ───────────────────────
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;
 
     const entities = viewer.entities;
+    const map = entityMapRef.current;
 
     // ── OIL SPILL POLYGON ────────────────────────────────────────
     const spillPositions = incident.polygon.coordinates.map((c) =>
       Cesium.Cartesian3.fromDegrees(c[1], c[0])
     );
 
-    entities.add({
+    const spillEntity = entities.add({
       id: "spill-polygon",
       polygon: {
         hierarchy: new Cesium.PolygonHierarchy(spillPositions),
-        material: Cesium.Color.fromCssColorString("#d4770a").withAlpha(0.3),
+        material: Cesium.Color.fromCssColorString("#d4770a").withAlpha(0.25),
         outline: true,
-        outlineColor: Cesium.Color.fromCssColorString("#fb923c"),
+        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.9),
         outlineWidth: 2,
         height: 10,
       },
     });
+    map.set("spill-polygon", spillEntity);
+
+    // Spill outline (brighter second ring for glow effect)
+    const spillOutlineEntity = entities.add({
+      id: "spill-outline-glow",
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(spillPositions),
+        material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.08),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.4),
+        outlineWidth: 6,
+        height: 8,
+      },
+    });
+    map.set("spill-polygon", spillOutlineEntity);
 
     // Spill center marker
-    entities.add({
+    const spillCenter = entities.add({
       id: "spill-center",
       position: Cesium.Cartesian3.fromDegrees(incident.polygon.center[1], incident.polygon.center[0], 500),
       point: {
-        pixelSize: 12,
+        pixelSize: 10,
         color: Cesium.Color.fromCssColorString("#fb923c"),
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 2,
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
       label: {
-        text: `OIL SPILL DETECTION\nArea: ${incident.polygon.areaKm2} km²\nConfidence: ${incident.confidence.score}%`,
-        font: "13px monospace",
+        text: `OIL SPILL DETECTION\nArea: ${incident.polygon.areaKm2} km² | Confidence: ${incident.confidence.score}%`,
+        font: "12px monospace",
         fillColor: Cesium.Color.WHITE,
         outlineColor: Cesium.Color.BLACK,
         outlineWidth: 2,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -20),
+        pixelOffset: new Cesium.Cartesian2(0, -18),
         showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.8),
+        backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.85),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     });
+    map.set("spill-polygon", spillCenter);
+
+    // ── DETECTION ZONE RING ───────────────────────────────────────
+    const detectionZone = entities.add({
+      id: "detection-zone-ring",
+      position: Cesium.Cartesian3.fromDegrees(incident.polygon.center[1], incident.polygon.center[0]),
+      ellipse: {
+        semiMajorAxis: 15000,  // 15 km radius
+        semiMinorAxis: 15000,
+        material: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.05),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.25),
+        outlineWidth: 1,
+        height: 5,
+        numberOfVerticalLines: 0,
+      },
+    });
+    map.set("detection-zone-", detectionZone);
 
     // ── AIS VESSELS ──────────────────────────────────────────────
     DEMO_VESSELS.forEach((vessel) => {
+      // Heading arrow direction in radians
+      const headingRad = Cesium.Math.toRadians(vessel.heading);
+      // Heading arrow line (small line showing direction from vessel)
+      const arrowLen = 0.008; // ~0.9 km
+      const arrowEndLat = vessel.lat + arrowLen * Math.cos(headingRad);
+      const arrowEndLon = vessel.lon + arrowLen * Math.sin(headingRad);
+
       // Vessel marker
-      entities.add({
+      const vesselEntity = entities.add({
         id: `vessel-${vessel.mmsi}`,
         position: Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 100),
         point: {
-          pixelSize: 10,
+          pixelSize: 8,
           color: Cesium.Color.fromCssColorString("#55aaff"),
           outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 1,
+          outlineWidth: 1.5,
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         },
-      label: {
-        text: vessel.name,
-        font: "11px monospace",
-        fillColor: Cesium.Color.WHITE,
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 2,
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -15),
-        showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.7),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      },
+        label: {
+          text: vessel.name,
+          font: "10px monospace",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -14),
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.75),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scale: 0.9,
+        },
       });
+      map.set(`vessel-${vessel.mmsi}`, vesselEntity);
+
+      // Heading indicator arrow
+      const headingEntity = entities.add({
+        id: `vessel-heading-${vessel.mmsi}`,
+        polyline: {
+          positions: [
+            Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 100),
+            Cesium.Cartesian3.fromDegrees(arrowEndLon, arrowEndLat, 100),
+          ],
+          width: 2,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.15,
+            color: Cesium.Color.fromCssColorString("#55aaff").withAlpha(0.7),
+          }),
+        },
+      });
+      map.set(`vessel-${vessel.mmsi}`, headingEntity);
 
       // Vessel track
       if (vessel.trajectory.length > 1) {
@@ -238,17 +325,51 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           Cesium.Cartesian3.fromDegrees(c[1], c[0])
         );
 
-        entities.add({
+        const trackEntity = entities.add({
           id: `track-${vessel.mmsi}`,
           polyline: {
             positions: trackPositions,
             width: 2,
             material: new Cesium.PolylineGlowMaterialProperty({
               glowPower: 0.1,
-              color: Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.6),
+              color: Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.5),
             }),
           },
         });
+        map.set(`track-${vessel.mmsi}`, trackEntity);
+
+        // Track direction arrows at midpoints
+        if (vessel.trajectory.length >= 3) {
+          const midIdx = Math.floor(vessel.trajectory.length / 2);
+          const prevIdx = Math.max(0, midIdx - 1);
+          const tAngle = Math.atan2(
+            vessel.trajectory[midIdx][1] - vessel.trajectory[prevIdx][1],
+            vessel.trajectory[midIdx][0] - vessel.trajectory[prevIdx][0]
+          );
+          const tArrowLen = 0.004;
+          const tMidLat = vessel.trajectory[midIdx][0];
+          const tMidLon = vessel.trajectory[midIdx][1];
+
+          const trackArrowEntity = entities.add({
+            id: `track-arrow-${vessel.mmsi}`,
+            polyline: {
+              positions: [
+                Cesium.Cartesian3.fromDegrees(
+                  tMidLon - tArrowLen * Math.sin(tAngle + 0.4),
+                  tMidLat - tArrowLen * Math.cos(tAngle + 0.4)
+                ),
+                Cesium.Cartesian3.fromDegrees(tMidLon, tMidLat),
+                Cesium.Cartesian3.fromDegrees(
+                  tMidLon - tArrowLen * Math.sin(tAngle - 0.4),
+                  tMidLat - tArrowLen * Math.cos(tAngle - 0.4)
+                ),
+              ],
+              width: 1.5,
+              material: Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.6),
+            },
+          });
+          map.set(`track-${vessel.mmsi}`, trackArrowEntity);
+        }
       }
     });
 
@@ -261,8 +382,8 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         Cesium.Cartesian3.fromDegrees(c[1], c[0])
       );
 
-      entities.add({
-        id: "satellite-track",
+      const satTrackEntity = entities.add({
+        id: "satellite-track-line",
         polyline: {
           positions: trackPositions,
           width: 2,
@@ -272,18 +393,54 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           }),
         },
       });
+      map.set("satellite-track-", satTrackEntity);
     }
 
+    // Satellite swath rectangle
+    const swathHalfWidth = obs.swathWidth / 2 / 111000; // convert km to degrees approx
+    const swathHalfLength = obs.swathLength / 2 / 111000;
+    const swathCenterLat = obs.swathCenter[0];
+    const swathCenterLon = obs.swathCenter[1];
+
+    // Create a rectangular swath footprint aligned with orbit direction
+    const swathAngle = Cesium.Math.toRadians(obs.orbitInclination > 90 ? 170 : 10);
+    const cosA = Math.cos(swathAngle);
+    const sinA = Math.sin(swathAngle);
+
+    const corners: Cesium.Cartesian3[] = [
+      [swathCenterLat - swathHalfLength * cosA + swathHalfWidth * sinA,
+       swathCenterLon - swathHalfLength * sinA - swathHalfWidth * cosA],
+      [swathCenterLat - swathHalfLength * cosA - swathHalfWidth * sinA,
+       swathCenterLon - swathHalfLength * sinA + swathHalfWidth * cosA],
+      [swathCenterLat + swathHalfLength * cosA - swathHalfWidth * sinA,
+       swathCenterLon + swathHalfLength * sinA + swathHalfWidth * cosA],
+      [swathCenterLat + swathHalfLength * cosA + swathHalfWidth * sinA,
+       swathCenterLon + swathHalfLength * sinA - swathHalfWidth * cosA],
+    ].map((c) => Cesium.Cartesian3.fromDegrees(c[1], c[0]));
+
+    const swathEntity = entities.add({
+      id: "satellite-swath-rect",
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(corners),
+        material: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.06),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.25),
+        outlineWidth: 1,
+        height: 5,
+      },
+    });
+    map.set("satellite-swath-", swathEntity);
+
     // Satellite position
-    entities.add({
-      id: "satellite",
+    const satEntity = entities.add({
+      id: "satellite-position",
       position: Cesium.Cartesian3.fromDegrees(
         obs.swathCenter[1],
         obs.swathCenter[0],
         obs.orbitAltitude * 1000
       ),
       point: {
-        pixelSize: 14,
+        pixelSize: 12,
         color: Cesium.Color.fromCssColorString("#44cc88"),
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 2,
@@ -298,9 +455,10 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -20),
         showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.7),
+        backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.8),
       },
     });
+    map.set("satellite-", satEntity);
 
     // ── DRIFT PATH ───────────────────────────────────────────────
     if (DEMO_DRIFT.forward.length > 1) {
@@ -308,31 +466,139 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0])
       );
 
-      entities.add({
-        id: "drift-forward",
+      const driftEntity = entities.add({
+        id: "drift-forward-path",
         polyline: {
           positions: driftPositions,
-          width: 3,
+          width: 2,
           material: new Cesium.PolylineDashMaterialProperty({
-            color: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.6),
-            dashLength: 16,
+            color: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.5),
+            dashLength: 12,
           }),
         },
       });
+      map.set("spill-polygon", driftEntity);
+    }
+
+    // ── BACKTRACK PATH ───────────────────────────────────────────
+    if (DEMO_DRIFT.backtrack.length > 1) {
+      const backtrackPositions = DEMO_DRIFT.backtrack.map((p) =>
+        Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0])
+      );
+
+      const backtrackEntity = entities.add({
+        id: "drift-backtrack-path",
+        polyline: {
+          positions: backtrackPositions,
+          width: 2,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.4),
+            dashLength: 10,
+          }),
+        },
+      });
+      map.set("spill-polygon", backtrackEntity);
+    }
+
+    // ── COASTLINE / BOUNDARY LINES ────────────────────────────────
+    // Simple lat/lon graticule visible when coastline layer is toggled
+    // (A real app would load GeoJSON coastline data; here we add a few reference lines)
+    for (let lat = 5; lat <= 20; lat += 5) {
+      const graticuleEntity = entities.add({
+        id: `coastline-lat-${lat}`,
+        polyline: {
+          positions: [
+            Cesium.Cartesian3.fromDegrees(80, lat),
+            Cesium.Cartesian3.fromDegrees(95, lat),
+          ],
+          width: 0.5,
+          material: Cesium.Color.fromCssColorString("#334155").withAlpha(0.3),
+        },
+        label: {
+          text: `${lat}°N`,
+          font: "9px monospace",
+          fillColor: Cesium.Color.fromCssColorString("#475569"),
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 1,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
+          pixelOffset: new Cesium.Cartesian2(4, 0),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scale: 0.8,
+        },
+      });
+      map.set("coastline-", graticuleEntity);
+    }
+    for (let lon = 82; lon <= 94; lon += 3) {
+      const graticuleEntity = entities.add({
+        id: `coastline-lon-${lon}`,
+        polyline: {
+          positions: [
+            Cesium.Cartesian3.fromDegrees(lon, 5),
+            Cesium.Cartesian3.fromDegrees(lon, 20),
+          ],
+          width: 0.5,
+          material: Cesium.Color.fromCssColorString("#334155").withAlpha(0.3),
+        },
+        label: {
+          text: `${lon}°E`,
+          font: "9px monospace",
+          fillColor: Cesium.Color.fromCssColorString("#475569"),
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 1,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.TOP,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+          pixelOffset: new Cesium.Cartesian2(0, 4),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scale: 0.8,
+        },
+      });
+      map.set("coastline-", graticuleEntity);
     }
 
   }, []);
 
-  // Handle vessel selection
+  // ── Layer visibility toggle ────────────────────────────────────
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    layers.forEach((layer) => {
+      const prefixes = LAYER_ENTITY_PREFIXES[layer.id];
+      if (!prefixes) return;
+
+      viewer.entities.values.forEach((entity) => {
+        if (!entity.id) return;
+        const id = entity.id as string;
+        const matches = prefixes.some((prefix) => id.startsWith(prefix));
+        if (matches) {
+          entity.show = layer.enabled;
+        }
+      });
+    });
+  }, [layers]);
+
+  // ── Handle vessel selection ─────────────────────────────────────
   const handleVesselSelect = useCallback((vessel: AisVessel) => {
     const viewer = viewerRef.current;
     if (!viewer) return;
+
+    // Reset previously selected vessel
+    if (selectedVessel) {
+      const prevEntity = viewer.entities.getById(`vessel-${selectedVessel.mmsi}`);
+      if (prevEntity?.point) {
+        prevEntity.point.color = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString("#55aaff"));
+        prevEntity.point.outlineWidth = new Cesium.ConstantProperty(1.5);
+      }
+    }
 
     setSelectedVessel(vessel);
 
     // Fly to vessel
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 800000),
+      destination: Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 600000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-45),
@@ -343,14 +609,14 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
     // Highlight vessel
     const entity = viewer.entities.getById(`vessel-${vessel.mmsi}`);
-    if (entity && entity.point) {
+    if (entity?.point) {
       entity.point.color = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString("#22d3ee"));
       entity.point.outlineColor = new Cesium.ConstantProperty(Cesium.Color.WHITE);
       entity.point.outlineWidth = new Cesium.ConstantProperty(3);
     }
-  }, []);
+  }, [selectedVessel]);
 
-  // Fly to spill
+  // ── Fly to spill ──────────────────────────────────────────────
   const flyToSpill = useCallback(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;
@@ -359,7 +625,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       destination: Cesium.Cartesian3.fromDegrees(
         incident.polygon.center[1],
         incident.polygon.center[0],
-        1500000
+        1200000
       ),
       orientation: {
         heading: Cesium.Math.toRadians(10),
@@ -370,12 +636,12 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     });
   }, [incident]);
 
-  // Toggle layer visibility
+  // ── Toggle layer ──────────────────────────────────────────────
   const toggleLayer = useCallback((id: Globe3dLayerId) => {
     setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, enabled: !l.enabled } : l)));
   }, []);
 
-  // Playback
+  // ── Playback ──────────────────────────────────────────────────
   useEffect(() => {
     if (!isPlaying) return;
     const iv = setInterval(() => {
@@ -551,8 +817,11 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
               <EvtField label="DETECTED" value={new Date(incident.detectedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " UTC"} />
               <EvtField label="LOCATION" value={`${incident.coordinates[0].toFixed(2)}° N, ${incident.coordinates[1].toFixed(2)}° E`} />
               <EvtField label="AREA" value={`${incident.polygon.areaKm2} km²`} />
+              <EvtField label="LENGTH" value={`${incident.polygon.lengthKm} km`} />
               <EvtField label="CONFIDENCE" value={`${incident.confidence.score}%`} color="text-cyan-400" />
               <EvtField label="SOURCE" value="Sentinel-1A (SAR)" />
+              <EvtField label="WATER DEPTH" value={`${incident.waterDepth} m`} />
+              <EvtField label="SEA STATE" value={incident.seaState} />
             </div>
             <div>
               <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Event Timeline</h3>
@@ -569,17 +838,55 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
               <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Affected Vessels</h3>
               <div className="space-y-2">
                 {DEMO_VESSELS.slice(0, 3).map((v, i) => (
-                  <div key={v.mmsi} className="flex items-start gap-2">
+                  <button key={v.mmsi} onClick={() => handleVesselSelect(v)} className="w-full text-left flex items-start gap-2 hover:bg-zinc-800/30 rounded p-1 -mx-1 transition-colors">
                     <Ship className="size-3 text-zinc-600 mt-0.5 shrink-0" />
                     <div>
                       <div className="text-[10px] font-semibold text-zinc-300">{v.name}</div>
                       <div className="text-[9px] text-zinc-500">{v.speed} kn › {v.heading}° · {(6 + i * 2.5).toFixed(1)} nm</div>
                     </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Confidence Factors */}
+            <div>
+              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Confidence Factors</h3>
+              <div className="space-y-1">
+                {incident.confidence.factors.slice(0, 3).map((f, i) => (
+                  <div key={i} className="flex items-start gap-1.5">
+                    <span className="text-emerald-500 text-[8px] mt-px">•</span>
+                    <span className="text-[9px] text-zinc-400 leading-tight">{f}</span>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* Top Source Attribution */}
+            {DEMO_ATTRIBUTIONS.length > 0 && (
+              <div className="rounded border border-zinc-800/60 bg-zinc-900/30 p-2.5">
+                <h3 className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider mb-1.5">Probable Source</h3>
+                <div className="text-[11px] font-semibold text-zinc-200">{DEMO_ATTRIBUTIONS[0].vesselName}</div>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-[16px] font-bold text-cyan-400">{DEMO_ATTRIBUTIONS[0].overallScore}</span>
+                  <span className="text-[9px] text-zinc-500">/100 confidence</span>
+                </div>
+                <div className="mt-1.5 space-y-0.5">
+                  {DEMO_ATTRIBUTIONS[0].reasons.slice(0, 3).map((r, i) => (
+                    <div key={i} className="text-[8px] text-zinc-500">{r}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button className="w-full rounded border border-zinc-700 bg-zinc-800/30 py-2 text-[10px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors uppercase tracking-wider">View Full Report</button>
+
+            {/* Demo disclaimer */}
+            <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2">
+              <div className="text-[8px] text-amber-400/70 leading-relaxed">
+                Demonstration data — vessel identities, detection results, and environmental conditions are synthetic. Not derived from live satellite or AIS feeds.
+              </div>
+            </div>
           </div>
         </aside>
       </div>
