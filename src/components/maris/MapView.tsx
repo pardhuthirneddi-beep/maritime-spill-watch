@@ -71,8 +71,8 @@ export default function MapView({
     if (!mapRef.current || mapInstance.current) return;
 
     const map = L.map(mapRef.current, {
-      center: [12.85, 80.24],
-      zoom: 11,
+      center: [12.85, 80.33],
+      zoom: 12,
       zoomControl: false,
       attributionControl: true,
     });
