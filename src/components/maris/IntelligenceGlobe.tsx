@@ -33,6 +33,7 @@ import type {
   Globe3dLayer,
   Globe3dLayerId,
 } from "@/data/types";
+import { generateEarthTexture, generateNightLights } from "./earthTexture";
 
 interface IntelligenceGlobeProps {
   onBack: () => void;
@@ -72,14 +73,24 @@ function createScene(container: HTMLDivElement) {
 
   const R = 100; // globe radius
 
-  // ── OCEAN SPHERE ────────────────────────────────────────────────
-  // Much brighter ocean with visible blue
+  // ── OCEAN SPHERE WITH PROCEDURAL TEXTURE ───────────────────────
+  const earthCanvas = generateEarthTexture(2048, 1024);
+  const earthTexture = new THREE.CanvasTexture(earthCanvas);
+  earthTexture.wrapS = THREE.RepeatWrapping;
+  earthTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+  const nightCanvas = generateNightLights(2048, 1024);
+  const nightTexture = new THREE.CanvasTexture(nightCanvas);
+  nightTexture.wrapS = THREE.RepeatWrapping;
+  nightTexture.wrapT = THREE.ClampToEdgeWrapping;
+
   const oceanGeom = new THREE.SphereGeometry(R, 128, 128);
   const oceanMat = new THREE.MeshPhongMaterial({
-    color: 0x0c2d4a,       // Visible dark blue
-    emissive: 0x061828,    // Subtle self-illumination
-    specular: 0x3399cc,    // Blue specular highlight
-    shininess: 40,
+    map: earthTexture,
+    emissiveMap: nightTexture,
+    emissive: new THREE.Color(0x554422),
+    specular: new THREE.Color(0x3399cc),
+    shininess: 25,
   });
   const ocean = new THREE.Mesh(oceanGeom, oceanMat);
   scene.add(ocean);
@@ -611,8 +622,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     const { scene, camera, renderer, R } = createScene(container);
     sceneRef.current = { scene, camera, renderer, R };
 
-    // Add continents
-    scene.add(createContinents(R));
+    // Continents now rendered via earth texture
 
     // Add labels
     const labels = [
