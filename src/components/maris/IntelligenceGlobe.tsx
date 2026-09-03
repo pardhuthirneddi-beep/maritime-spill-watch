@@ -4,24 +4,17 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import * as THREE from "three";
 import {
   ArrowLeft,
-  ChevronDown,
   ChevronRight,
-  Clock,
   Compass,
   Crosshair,
-  Eye,
-  EyeOff,
   Filter,
   Layers,
   Navigation,
   Pause,
   Play,
   Radar,
-  RotateCcw,
   Search,
   Ship,
-  SkipBack,
-  SkipForward,
   Target,
   Wind,
   X,
@@ -33,11 +26,9 @@ import {
   DEMO_DRIFT,
   DEMO_ATTRIBUTIONS,
   DEMO_ENVIRONMENTAL,
-  DEMO_TIMELINE,
 } from "@/data/demoData";
 import type {
   AisVessel,
-  OilSpillIncident,
   LatLon,
   Globe3dLayer,
   Globe3dLayerId,
@@ -49,444 +40,512 @@ interface IntelligenceGlobeProps {
 
 // ─── GEO UTILITIES ──────────────────────────────────────────────────
 
-function latLonToVector3(lat: number, lon: number, radius: number): THREE.Vector3 {
+function latLonToVec3(lat: number, lon: number, r: number): THREE.Vector3 {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
   return new THREE.Vector3(
-    -radius * Math.sin(phi) * Math.cos(theta),
-    radius * Math.cos(phi),
-    radius * Math.sin(phi) * Math.sin(theta)
+    -r * Math.sin(phi) * Math.cos(theta),
+    r * Math.cos(phi),
+    r * Math.sin(phi) * Math.sin(theta)
   );
 }
 
-// ─── GLOBE SCENE BUILDER ────────────────────────────────────────────
+// ─── GLOBE SCENE ────────────────────────────────────────────────────
 
-function createGlobeScene(container: HTMLDivElement) {
-  const width = container.clientWidth;
-  const height = container.clientHeight;
+function createScene(container: HTMLDivElement) {
+  const w = container.clientWidth;
+  const h = container.clientHeight;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x020508);
 
-  const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
-  camera.position.set(0, 80, 320);
+  const camera = new THREE.PerspectiveCamera(50, w / h, 1, 4000);
+  // Position: half-globe view from above-right, looking at Indian Ocean
+  camera.position.set(120, 160, 260);
 
-  const renderer = new THREE.WebGLRenderer({
-    antialias: true,
-    alpha: false,
-    powerPreference: "high-performance",
-  });
-  renderer.setSize(width, height);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer.setSize(w, h);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 1.4;
   container.appendChild(renderer.domElement);
 
-  const globeRadius = 100;
+  const R = 100; // globe radius
 
-  // Globe — dark ocean
-  const globeGeom = new THREE.SphereGeometry(globeRadius, 96, 96);
-  const globeMat = new THREE.MeshPhongMaterial({
-    color: 0x071520,
-    emissive: 0x030a12,
-    specular: 0x0a1a2e,
-    shininess: 20,
+  // ── OCEAN SPHERE ────────────────────────────────────────────────
+  // Much brighter ocean with visible blue
+  const oceanGeom = new THREE.SphereGeometry(R, 128, 128);
+  const oceanMat = new THREE.MeshPhongMaterial({
+    color: 0x0c2d4a,       // Visible dark blue
+    emissive: 0x061828,    // Subtle self-illumination
+    specular: 0x3399cc,    // Blue specular highlight
+    shininess: 40,
   });
-  const globe = new THREE.Mesh(globeGeom, globeMat);
-  scene.add(globe);
+  const ocean = new THREE.Mesh(oceanGeom, oceanMat);
+  scene.add(ocean);
 
-  // Subtle wireframe
-  const wireGeom = new THREE.SphereGeometry(globeRadius + 0.2, 64, 64);
-  const wireMat = new THREE.MeshBasicMaterial({
-    color: 0x0e2a44,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.06,
-  });
-  scene.add(new THREE.Mesh(wireGeom, wireMat));
-
-  // Latitude grid lines
-  const gridGroup = new THREE.Group();
-  gridGroup.name = "grid";
-  const latMat = new THREE.LineBasicMaterial({ color: 0x1a3a5c, transparent: true, opacity: 0.18 });
-  const lonMat = new THREE.LineBasicMaterial({ color: 0x1a3a5c, transparent: true, opacity: 0.12 });
-
+  // ── WIREFRAME GRID ON OCEAN ─────────────────────────────────────
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x1a4466, transparent: true, opacity: 0.25 });
   for (let lat = -80; lat <= 80; lat += 10) {
     const pts: THREE.Vector3[] = [];
-    for (let lon = 0; lon <= 360; lon += 2) {
-      pts.push(latLonToVector3(lat, lon, globeRadius + 0.4));
-    }
-    gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), latMat));
+    for (let lon = 0; lon <= 360; lon += 3) pts.push(latLonToVec3(lat, lon, R + 0.15));
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
   }
   for (let lon = 0; lon < 360; lon += 10) {
     const pts: THREE.Vector3[] = [];
-    for (let lat = -90; lat <= 90; lat += 2) {
-      pts.push(latLonToVector3(lat, lon, globeRadius + 0.4));
-    }
-    gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lonMat));
+    for (let lat = -90; lat <= 90; lat += 3) pts.push(latLonToVec3(lat, lon, R + 0.15));
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
   }
-  scene.add(gridGroup);
 
-  // Atmosphere
-  const atmosGeom = new THREE.SphereGeometry(globeRadius + 1.5, 96, 96);
-  const atmosMat = new THREE.MeshBasicMaterial({
-    color: 0x1a4a7a,
+  // ── ATMOSPHERE GLOW (multiple layers for glassy edge) ───────────
+  // Inner atmosphere
+  const atmos1 = new THREE.Mesh(
+    new THREE.SphereGeometry(R + 0.8, 128, 128),
+    new THREE.MeshBasicMaterial({ color: 0x2277bb, transparent: true, opacity: 0.12, side: THREE.BackSide })
+  );
+  scene.add(atmos1);
+
+  // Mid atmosphere
+  const atmos2 = new THREE.Mesh(
+    new THREE.SphereGeometry(R + 3, 128, 128),
+    new THREE.MeshBasicMaterial({ color: 0x1166aa, transparent: true, opacity: 0.08, side: THREE.BackSide })
+  );
+  scene.add(atmos2);
+
+  // Outer glow — the key "glassy edge" effect
+  const atmos3 = new THREE.Mesh(
+    new THREE.SphereGeometry(R + 8, 64, 64),
+    new THREE.MeshBasicMaterial({ color: 0x0a4488, transparent: true, opacity: 0.06, side: THREE.BackSide })
+  );
+  scene.add(atmos3);
+
+  // Rim glow — bright edge highlight
+  const rimGeom = new THREE.SphereGeometry(R + 1.2, 128, 128);
+  const rimMat = new THREE.ShaderMaterial({
+    uniforms: {
+      glowColor: { value: new THREE.Color(0x3399dd) },
+      viewVector: { value: new THREE.Vector3(120, 160, 260).normalize() },
+    },
+    vertexShader: `
+      uniform vec3 viewVector;
+      varying float intensity;
+      void main() {
+        vec3 vNormal = normalize(normalMatrix * normal);
+        vec3 vNormel = normalize(normalMatrix * viewVector);
+        intensity = pow(0.7 - dot(vNormal, vec3(0, 0, 1.0)), 2.0);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 glowColor;
+      varying float intensity;
+      void main() {
+        vec3 glow = glowColor * intensity;
+        gl_FragColor = vec4(glow, intensity * 0.6);
+      }
+    `,
+    side: THREE.FrontSide,
+    blending: THREE.AdditiveBlending,
     transparent: true,
-    opacity: 0.08,
-    side: THREE.BackSide,
   });
-  scene.add(new THREE.Mesh(atmosGeom, atmosMat));
+  const rim = new THREE.Mesh(rimGeom, rimMat);
+  scene.add(rim);
 
-  // Outer atmosphere glow
-  const glowGeom = new THREE.SphereGeometry(globeRadius + 6, 64, 64);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0x0d3060,
-    transparent: true,
-    opacity: 0.05,
-    side: THREE.BackSide,
-  });
-  scene.add(new THREE.Mesh(glowGeom, glowMat));
+  // ── LIGHTING ────────────────────────────────────────────────────
+  const ambient = new THREE.AmbientLight(0x334466, 1.2);
+  scene.add(ambient);
 
-  // Lighting — dramatic
-  const ambientLight = new THREE.AmbientLight(0x1a2a44, 0.5);
-  scene.add(ambientLight);
+  const sun = new THREE.DirectionalLight(0xeeeeff, 1.8);
+  sun.position.set(200, 200, 150);
+  scene.add(sun);
 
-  const sunLight = new THREE.DirectionalLight(0xccddff, 1.0);
-  sunLight.position.set(200, 150, 100);
-  scene.add(sunLight);
+  const fill = new THREE.DirectionalLight(0x4488bb, 0.6);
+  fill.position.set(-150, 50, -100);
+  scene.add(fill);
 
-  const rimLight = new THREE.DirectionalLight(0x2266aa, 0.4);
-  rimLight.position.set(-200, -50, -200);
+  const rimLight = new THREE.DirectionalLight(0x66aadd, 0.8);
+  rimLight.position.set(0, -100, 200);
   scene.add(rimLight);
 
-  return { scene, camera, renderer, globe, globeRadius };
+  // Point light for specular highlight on ocean
+  const specLight = new THREE.PointLight(0x88ccee, 1.5, 400);
+  specLight.position.set(150, 180, 200);
+  scene.add(specLight);
+
+  return { scene, camera, renderer, R };
 }
 
-// ─── CONTINENT/COASTLINE HELPERS ────────────────────────────────────
+// ─── CONTINENTS (filled polygons on globe) ──────────────────────────
 
-function createCoastlines(globeRadius: number): THREE.Group {
+function createContinents(R: number): THREE.Group {
   const group = new THREE.Group();
   group.name = "boundaries";
 
-  const coastMat = new THREE.LineBasicMaterial({
-    color: 0x2a5a8a,
+  // Land material — lighter, visible
+  const landMat = new THREE.MeshBasicMaterial({
+    color: 0x1a3344,
     transparent: true,
-    opacity: 0.55,
-    linewidth: 1,
-  });
-
-  // India east coast
-  const indiaEast: LatLon[] = [
-    [23.5, 88.8], [22.0, 88.0], [21.0, 87.5], [20.0, 87.0],
-    [19.0, 85.5], [18.0, 84.5], [17.0, 83.5], [16.0, 82.0],
-    [15.0, 81.0], [14.0, 80.5], [13.0, 80.3], [12.5, 80.0],
-    [11.5, 79.8], [10.5, 79.8], [9.5, 79.5], [8.5, 77.5],
-  ];
-
-  // India west coast
-  const indiaWest: LatLon[] = [
-    [23.5, 68.5], [22.5, 69.0], [21.5, 70.0], [20.0, 72.5],
-    [19.0, 73.0], [18.0, 73.5], [17.0, 74.0], [16.0, 73.5],
-    [15.0, 74.0], [14.0, 74.5], [13.0, 74.8], [12.0, 75.0],
-    [11.0, 75.8], [10.0, 76.2], [9.0, 76.5], [8.0, 77.5],
-  ];
-
-  // Pakistan coast
-  const pakistan: LatLon[] = [
-    [25.0, 67.0], [24.5, 67.5], [24.0, 68.0], [23.5, 68.5],
-  ];
-
-  // Sri Lanka
-  const sriLanka: LatLon[] = [
-    [10.0, 80.0], [9.5, 80.0], [8.0, 80.5], [7.0, 80.0],
-    [6.0, 80.2], [6.5, 79.8], [7.5, 79.5], [8.5, 79.8],
-    [9.5, 79.8], [10.0, 80.0],
-  ];
-
-  // Arabian Peninsula
-  const arabia: LatLon[] = [
-    [25.0, 56.5], [24.0, 55.0], [23.5, 55.5], [22.0, 56.0],
-    [20.0, 57.5], [17.5, 56.5], [16.0, 53.0], [15.0, 51.0],
-    [13.0, 45.0], [12.5, 44.0],
-  ];
-
-  // Africa (horn)
-  const africa: LatLon[] = [
-    [12.0, 51.0], [11.0, 49.0], [10.0, 45.0], [5.0, 45.0],
-  ];
-
-  const coastlines = [indiaEast, indiaWest, pakistan, sriLanka, arabia, africa];
-
-  coastlines.forEach((coast) => {
-    const pts = coast.map((c) => latLonToVector3(c[0], c[1], globeRadius + 0.6));
-    const geom = new THREE.BufferGeometry().setFromPoints(pts);
-    group.add(new THREE.Line(geom, coastMat));
-  });
-
-  // Land fill (approximate for India)
-  const fillGeom = new THREE.BufferGeometry();
-  const fillVerts: number[] = [];
-
-  // Simple India triangle fill
-  const indiaOutline = [...indiaEast, ...indiaWest.reverse()];
-  const indiaCenter = latLonToVector3(20.5, 78.0, globeRadius + 0.3);
-
-  for (let i = 0; i < indiaOutline.length - 1; i++) {
-    const p1 = latLonToVector3(indiaOutline[i][0], indiaOutline[i][1], globeRadius + 0.3);
-    const p2 = latLonToVector3(indiaOutline[i + 1][0], indiaOutline[i + 1][1], globeRadius + 0.3);
-    fillVerts.push(
-      indiaCenter.x, indiaCenter.y, indiaCenter.z,
-      p1.x, p1.y, p1.z,
-      p2.x, p2.y, p2.z
-    );
-  }
-
-  fillGeom.setAttribute("position", new THREE.Float32BufferAttribute(fillVerts, 3));
-  const fillMat = new THREE.MeshBasicMaterial({
-    color: 0x0e1f2e,
-    transparent: true,
-    opacity: 0.6,
+    opacity: 0.85,
     side: THREE.DoubleSide,
   });
-  group.add(new THREE.Mesh(fillGeom, fillMat));
+
+  const coastLineMat = new THREE.LineBasicMaterial({
+    color: 0x3a8abb,
+    transparent: true,
+    opacity: 0.8,
+  });
+
+  // Helper: create filled polygon from lat/lon outline
+  function addLand(shape: LatLon[], name?: string) {
+    const vecs = shape.map((c) => latLonToVec3(c[0], c[1], R + 0.3));
+    const center = vecs.reduce((s, v) => s.add(v), new THREE.Vector3()).divideScalar(vecs.length);
+    center.normalize().multiplyScalar(R + 0.25);
+
+    const verts: number[] = [];
+    for (let i = 0; i < vecs.length; i++) {
+      const next = vecs[(i + 1) % vecs.length];
+      verts.push(center.x, center.y, center.z, vecs[i].x, vecs[i].y, vecs[i].z, next.x, next.y, next.z);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+    group.add(new THREE.Mesh(geom, landMat));
+
+    // Coast outline
+    const outlinePts = [...vecs, vecs[0]];
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), coastLineMat));
+
+    // Label
+    if (name && shape.length > 2) {
+      const mid = shape[Math.floor(shape.length / 2)];
+      const labelPos = latLonToVec3(mid[0], mid[1], R + 2);
+      // We'll use HTML labels instead
+    }
+  }
+
+  // ── INDIA (detailed outline) ────────────────────────────────────
+  const india: LatLon[] = [
+    [35.0, 77.0], [34.0, 77.5], [33.0, 79.0], [31.0, 80.5],
+    [30.0, 81.0], [28.0, 84.0], [27.0, 84.5], [26.0, 85.0],
+    [25.5, 86.5], [25.0, 88.0], [24.0, 88.8], [23.0, 88.5],
+    [22.0, 88.0], [21.5, 87.5], [20.5, 87.0], [19.5, 86.0],
+    [18.5, 85.0], [17.5, 83.5], [16.5, 82.5], [15.5, 81.0],
+    [14.5, 80.5], [13.5, 80.3], [12.5, 80.0], [11.5, 79.8],
+    [10.5, 79.8], [9.5, 79.5], [8.5, 77.5], [8.0, 77.0],
+    [9.0, 76.5], [10.0, 76.2], [11.0, 75.8], [12.0, 75.0],
+    [13.0, 74.8], [14.0, 74.5], [15.0, 74.0], [16.0, 73.5],
+    [17.0, 74.0], [18.0, 73.5], [19.0, 73.0], [20.0, 72.5],
+    [21.0, 71.5], [21.5, 70.0], [22.5, 69.0], [23.5, 68.5],
+    [24.5, 68.0], [25.5, 67.5], [27.0, 68.0], [28.0, 69.5],
+    [29.0, 71.0], [30.0, 72.0], [31.0, 73.5], [32.0, 75.0],
+    [33.0, 75.5], [34.0, 76.0], [35.0, 77.0],
+  ];
+  addLand(india, "India");
+
+  // ── SRI LANKA ───────────────────────────────────────────────────
+  const sriLanka: LatLon[] = [
+    [10.0, 80.0], [9.5, 80.2], [8.5, 81.0], [7.5, 81.5],
+    [6.5, 80.5], [6.0, 80.2], [6.5, 79.8], [7.5, 79.5],
+    [8.5, 79.8], [9.5, 79.8], [10.0, 80.0],
+  ];
+  addLand(sriLanka, "Sri Lanka");
+
+  // ── PAKISTAN ────────────────────────────────────────────────────
+  const pakistan: LatLon[] = [
+    [35.0, 77.0], [36.0, 76.0], [37.0, 75.0], [36.5, 73.5],
+    [35.5, 72.0], [34.0, 71.5], [32.5, 71.0], [31.0, 70.5],
+    [30.0, 70.0], [28.5, 69.0], [27.0, 68.0], [25.5, 67.5],
+    [24.5, 66.5], [25.0, 62.0], [26.0, 63.0], [27.0, 63.5],
+    [28.0, 64.0], [29.0, 65.0], [30.0, 66.5], [31.0, 68.0],
+    [32.0, 69.0], [33.0, 70.5], [34.0, 72.5], [35.0, 77.0],
+  ];
+  addLand(pakistan, "Pakistan");
+
+  // ── ARABIAN PENINSULA ───────────────────────────────────────────
+  const arabia: LatLon[] = [
+    [30.0, 48.0], [29.0, 48.0], [27.5, 49.5], [26.5, 50.0],
+    [25.0, 50.5], [24.0, 51.5], [23.5, 53.0], [23.0, 54.0],
+    [22.0, 55.0], [21.5, 56.0], [20.0, 57.5], [18.5, 57.0],
+    [17.0, 56.5], [16.5, 54.0], [16.0, 52.5], [15.5, 51.5],
+    [14.5, 49.0], [13.5, 46.5], [13.0, 45.0], [14.0, 43.0],
+    [15.0, 42.5], [16.5, 42.5], [18.0, 40.5], [20.0, 39.5],
+    [22.0, 39.5], [24.0, 38.5], [26.0, 39.0], [28.0, 39.5],
+    [29.0, 40.5], [30.0, 42.0], [31.0, 44.0], [31.5, 46.0],
+    [30.5, 47.0], [30.0, 48.0],
+  ];
+  addLand(arabia, "Arabia");
+
+  // ── AFRICA (horn + east) ────────────────────────────────────────
+  const africa: LatLon[] = [
+    [12.5, 44.0], [11.5, 43.0], [11.0, 42.0], [10.5, 41.5],
+    [9.0, 42.0], [7.0, 44.0], [5.0, 45.5], [4.0, 46.0],
+    [2.0, 45.0], [0.0, 42.0], [-2.0, 41.0], [-5.0, 40.0],
+    [-8.0, 39.0], [-10.0, 40.0], [-12.0, 42.0], [-15.0, 40.5],
+    [-18.0, 37.0], [-20.0, 35.0], [-25.0, 33.0], [-28.0, 31.0],
+    [-30.0, 30.0], [-33.0, 27.0], [-34.0, 26.0],
+  ];
+  addLand(africa, "Africa");
+
+  // ── IRAN ────────────────────────────────────────────────────────
+  const iran: LatLon[] = [
+    [37.5, 54.0], [37.0, 56.0], [36.0, 57.0], [35.0, 58.5],
+    [34.0, 59.5], [32.5, 60.0], [31.0, 61.5], [29.5, 60.5],
+    [28.0, 59.0], [26.5, 57.5], [25.5, 57.0], [25.0, 56.0],
+    [25.5, 55.5], [26.5, 54.5], [27.5, 53.0], [28.5, 51.0],
+    [30.0, 50.0], [31.5, 48.5], [33.0, 47.0], [34.5, 46.0],
+    [35.5, 46.5], [36.5, 48.0], [37.5, 49.5], [38.5, 48.5],
+    [39.0, 45.0], [38.0, 44.0], [37.5, 44.5], [37.0, 46.0],
+    [37.5, 48.0], [37.5, 54.0],
+  ];
+  addLand(iran, "Iran");
+
+  // ── CENTRAL ASIA LANDMASS ───────────────────────────────────────
+  const centralAsia: LatLon[] = [
+    [40.0, 50.0], [42.0, 52.0], [44.0, 54.0], [45.0, 56.0],
+    [46.0, 58.0], [47.0, 60.0], [48.0, 62.0], [47.0, 64.0],
+    [45.0, 66.0], [43.0, 68.0], [42.0, 70.0], [41.0, 72.0],
+    [40.0, 74.0], [38.0, 76.0], [37.0, 78.0], [35.0, 77.0],
+    [34.0, 76.0], [33.0, 75.5], [32.0, 75.0], [31.0, 73.5],
+    [30.0, 72.0], [30.5, 71.0], [31.0, 70.0], [32.0, 69.0],
+    [33.0, 68.0], [34.0, 66.0], [35.0, 64.0], [36.0, 62.0],
+    [37.0, 60.0], [38.0, 58.0], [39.0, 56.0], [39.5, 53.0],
+    [40.0, 50.0],
+  ];
+  addLand(centralAsia, "Central Asia");
 
   return group;
+}
+
+// ─── LABELS (HTML overlay) ──────────────────────────────────────────
+
+function createTextLabel(text: string, lat: number, lon: number, R: number, color = "#4a8ab5"): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "transparent";
+  ctx.fillRect(0, 0, 256, 64);
+  ctx.font = "bold 22px monospace";
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.fillText(text, 128, 38);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.8 });
+  const sprite = new THREE.Sprite(mat);
+  const pos = latLonToVec3(lat, lon, R + 3);
+  sprite.position.copy(pos);
+  sprite.scale.set(20, 5, 1);
+  return sprite;
 }
 
 // ─── VESSEL MARKERS ─────────────────────────────────────────────────
 
-function createVesselMarker(
-  vessel: AisVessel,
-  globeRadius: number,
-  isSelected: boolean
-): THREE.Group {
-  const group = new THREE.Group();
-  const pos = latLonToVector3(vessel.lat, vessel.lon, globeRadius + 0.5);
+function createVessel(v: AisVessel, R: number, selected: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const pos = latLonToVec3(v.lat, v.lon, R + 0.5);
 
-  // Ship body (elongated diamond)
-  const bodyGeom = new THREE.BufferGeometry();
-  const bodyVerts = new Float32Array([
-    0, 0, -1.2,  // bow
-    -0.6, 0, 0,   // port
-    0, 0, 1.2,    // stern
-    0.6, 0, 0,    // starboard
-  ]);
-  const bodyIdx = [0, 1, 2, 0, 2, 3];
-  bodyGeom.setAttribute("position", new THREE.BufferAttribute(bodyVerts, 3));
-  bodyGeom.setIndex(bodyIdx);
-  bodyGeom.computeVertexNormals();
+  // Ship body — diamond shape
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -1.5);
+  shape.lineTo(0.8, 0);
+  shape.lineTo(0, 1.5);
+  shape.lineTo(-0.8, 0);
+  shape.closePath();
 
+  const extrudeSettings = { depth: 0.3, bevelEnabled: false };
+  const bodyGeom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
   const bodyMat = new THREE.MeshBasicMaterial({
-    color: isSelected ? 0x22d3ee : 0x4a9eff,
+    color: selected ? 0x22d3ee : 0x55aaff,
   });
   const body = new THREE.Mesh(bodyGeom, bodyMat);
   body.rotation.x = -Math.PI / 2;
-  body.rotation.z = -((vessel.heading * Math.PI) / 180);
-  group.add(body);
+  body.rotation.z = -((v.heading * Math.PI) / 180);
+  g.add(body);
 
-  // Glow
-  const glowGeom = new THREE.SphereGeometry(isSelected ? 2.0 : 1.2, 8, 8);
+  // Glow sphere
+  const glowGeom = new THREE.SphereGeometry(selected ? 2.0 : 1.0, 8, 8);
   const glowMat = new THREE.MeshBasicMaterial({
-    color: isSelected ? 0x22d3ee : 0x4a9eff,
+    color: selected ? 0x22d3ee : 0x55aaff,
     transparent: true,
-    opacity: isSelected ? 0.3 : 0.15,
+    opacity: selected ? 0.4 : 0.2,
   });
-  group.add(new THREE.Mesh(glowGeom, glowMat));
+  g.add(new THREE.Mesh(glowGeom, glowMat));
 
-  // Vertical pillar
-  const pillarH = isSelected ? 4 : 2;
-  const pillarPts = [
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, pillarH, 0),
-  ];
-  const pillarGeom = new THREE.BufferGeometry().setFromPoints(pillarPts);
-  const pillarMat = new THREE.LineBasicMaterial({
-    color: isSelected ? 0x22d3ee : 0x4a9eff,
-    transparent: true,
-    opacity: 0.4,
-  });
-  group.add(new THREE.Line(pillarGeom, pillarMat));
+  // Vertical line
+  const pillarH = selected ? 5 : 2.5;
+  const pillarPts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, pillarH, 0)];
+  g.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pillarPts),
+    new THREE.LineBasicMaterial({ color: selected ? 0x22d3ee : 0x55aaff, transparent: true, opacity: 0.5 })
+  ));
 
   // Selection ring
-  if (isSelected) {
-    const ringGeom = new THREE.RingGeometry(3, 3.5, 24);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x22d3ee,
-      transparent: true,
-      opacity: 0.35,
-      side: THREE.DoubleSide,
-    });
-    const ring = new THREE.Mesh(ringGeom, ringMat);
+  if (selected) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(3, 3.5, 24),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
+    );
     ring.position.y = pillarH;
     ring.rotation.x = -Math.PI / 2;
-    group.add(ring);
+    g.add(ring);
   }
 
-  group.position.copy(pos);
-  group.userData = { vessel, type: "vessel" };
-  return group;
+  g.position.copy(pos);
+  return g;
 }
 
 // ─── VESSEL TRACKS ──────────────────────────────────────────────────
 
-function createVesselTrack(
-  vessel: AisVessel,
-  globeRadius: number,
-  isSelected: boolean
-): THREE.Line {
-  const pts = vessel.trajectory.map((p) =>
-    latLonToVector3(p[0], p[1], globeRadius + 0.5)
-  );
+function createTrack(v: AisVessel, R: number, selected: boolean): THREE.Line {
+  const pts = v.trajectory.map((c) => latLonToVec3(c[0], c[1], R + 0.4));
   if (pts.length < 2) return new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial());
-
-  const geom = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineBasicMaterial({
-    color: isSelected ? 0x22d3ee : 0x3388cc,
-    transparent: true,
-    opacity: isSelected ? 0.8 : 0.35,
-  });
-  return new THREE.Line(geom, mat);
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({
+      color: selected ? 0x22d3ee : 0x3388cc,
+      transparent: true,
+      opacity: selected ? 0.8 : 0.4,
+    })
+  );
 }
 
 // ─── SPILL POLYGON ──────────────────────────────────────────────────
 
-function createSpillPolygon(incident: OilSpillIncident, globeRadius: number): THREE.Group {
-  const group = new THREE.Group();
-  group.name = "spill";
+function createSpill(incident: typeof DEMO_INCIDENT, R: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "spill";
 
-  const polyPts = incident.polygon.coordinates.map((c) =>
-    latLonToVector3(c[0], c[1], globeRadius + 0.7)
-  );
+  const pts = incident.polygon.coordinates.map((c) => latLonToVec3(c[0], c[1], R + 0.6));
 
-  // Boundary line
-  const lineGeom = new THREE.BufferGeometry().setFromPoints([...polyPts, polyPts[0]]);
-  const lineMat = new THREE.LineBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.9 });
-  group.add(new THREE.Line(lineGeom, lineMat));
+  // Boundary
+  g.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]),
+    new THREE.LineBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 1.0 })
+  ));
 
   // Fill
-  const center = latLonToVector3(incident.polygon.center[0], incident.polygon.center[1], globeRadius + 0.6);
+  const center = latLonToVec3(incident.polygon.center[0], incident.polygon.center[1], R + 0.5);
   const verts: number[] = [];
-  for (let i = 0; i < polyPts.length - 1; i++) {
-    verts.push(center.x, center.y, center.z);
-    verts.push(polyPts[i].x, polyPts[i].y, polyPts[i].z);
-    verts.push(polyPts[i + 1].x, polyPts[i + 1].y, polyPts[i + 1].z);
+  for (let i = 0; i < pts.length - 1; i++) {
+    verts.push(center.x, center.y, center.z, pts[i].x, pts[i].y, pts[i].z, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z);
   }
   const fillGeom = new THREE.BufferGeometry();
   fillGeom.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
-  const fillMat = new THREE.MeshBasicMaterial({
-    color: 0xc2720a,
-    transparent: true,
-    opacity: 0.22,
-    side: THREE.DoubleSide,
-  });
-  group.add(new THREE.Mesh(fillGeom, fillMat));
-
-  // Center beacon
-  const beaconGeom = new THREE.SphereGeometry(1.5, 8, 8);
-  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xfb923c });
-  const beacon = new THREE.Mesh(beaconGeom, beaconMat);
-  beacon.position.copy(center);
-  group.add(beacon);
-
-  // Vertical line
-  const vertPts = [
-    latLonToVector3(incident.polygon.center[0], incident.polygon.center[1], globeRadius),
-    latLonToVector3(incident.polygon.center[0], incident.polygon.center[1], globeRadius + 6),
-  ];
-  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(vertPts), new THREE.LineBasicMaterial({
-    color: 0xfb923c, transparent: true, opacity: 0.5,
+  g.add(new THREE.Mesh(fillGeom, new THREE.MeshBasicMaterial({
+    color: 0xd4770a, transparent: true, opacity: 0.35, side: THREE.DoubleSide,
   })));
 
-  return group;
+  // Center beacon
+  const beacon = new THREE.Mesh(
+    new THREE.SphereGeometry(1.5, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xfb923c })
+  );
+  beacon.position.copy(center);
+  g.add(beacon);
+
+  // Vertical line
+  g.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      latLonToVec3(incident.polygon.center[0], incident.polygon.center[1], R),
+      latLonToVec3(incident.polygon.center[0], incident.polygon.center[1], R + 7),
+    ]),
+    new THREE.LineBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.6 })
+  ));
+
+  return g;
 }
 
 // ─── SATELLITE ──────────────────────────────────────────────────────
 
-function createSatellitePath(globeRadius: number): THREE.Group {
-  const group = new THREE.Group();
-  group.name = "satellite";
+function createSatellite(R: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "satellite";
 
   // Ground track
   const trackPts: THREE.Vector3[] = [];
-  for (let lat = 18; lat >= 8; lat -= 0.3) {
-    trackPts.push(latLonToVector3(lat, 86 + (18 - lat) * 0.2, globeRadius + 0.8));
+  for (let lat = 20; lat >= 6; lat -= 0.5) {
+    trackPts.push(latLonToVec3(lat, 86 + (20 - lat) * 0.2, R + 0.6));
   }
-  const trackGeom = new THREE.BufferGeometry().setFromPoints(trackPts);
-  const trackMat = new THREE.LineDashedMaterial({
-    color: 0x44cc88, transparent: true, opacity: 0.5, dashSize: 2, gapSize: 1,
-  });
-  const trackLine = new THREE.Line(trackGeom, trackMat);
+  const trackLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(trackPts),
+    new THREE.LineDashedMaterial({ color: 0x44cc88, transparent: true, opacity: 0.6, dashSize: 2, gapSize: 1 })
+  );
   trackLine.computeLineDistances();
-  group.add(trackLine);
+  g.add(trackLine);
 
-  // Satellite marker
-  const satPos = latLonToVector3(15.5, 86.3, globeRadius + 14);
-  const satGeom = new THREE.OctahedronGeometry(1.5, 0);
-  const satMat = new THREE.MeshBasicMaterial({ color: 0x44cc88 });
-  const sat = new THREE.Mesh(satGeom, satMat);
+  // Satellite body
+  const satPos = latLonToVec3(16, 86.4, R + 16);
+  const sat = new THREE.Mesh(
+    new THREE.OctahedronGeometry(1.8, 0),
+    new THREE.MeshBasicMaterial({ color: 0x44cc88 })
+  );
   sat.position.copy(satPos);
-  group.add(sat);
+  g.add(sat);
+
+  // Solar panels (two flat boxes)
+  const panelGeom = new THREE.BoxGeometry(4, 0.2, 1.5);
+  const panelMat = new THREE.MeshBasicMaterial({ color: 0x2288aa });
+  const panel1 = new THREE.Mesh(panelGeom, panelMat);
+  panel1.position.copy(satPos).add(new THREE.Vector3(-3, 0, 0));
+  g.add(panel1);
+  const panel2 = new THREE.Mesh(panelGeom, panelMat);
+  panel2.position.copy(satPos).add(new THREE.Vector3(3, 0, 0));
+  g.add(panel2);
 
   // Observation cone
-  const coneGeom = new THREE.ConeGeometry(18, 14, 4, 1, true);
-  const coneMat = new THREE.MeshBasicMaterial({
-    color: 0x44cc88, transparent: true, opacity: 0.03, side: THREE.DoubleSide,
-  });
-  const cone = new THREE.Mesh(coneGeom, coneMat);
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(20, 16, 4, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x44cc88, transparent: true, opacity: 0.04, side: THREE.DoubleSide })
+  );
   cone.position.copy(satPos);
   cone.lookAt(new THREE.Vector3(0, 0, 0));
-  group.add(cone);
+  g.add(cone);
 
-  return group;
+  return g;
 }
 
-// ─── DRIFT PATHS ────────────────────────────────────────────────────
+// ─── DRIFT ──────────────────────────────────────────────────────────
 
-function createDriftPaths(globeRadius: number): THREE.Group {
-  const group = new THREE.Group();
-  group.name = "drift";
+function createDrift(R: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "drift";
 
-  // Forward
-  const fwdPts = DEMO_DRIFT.forward.map((p) =>
-    latLonToVector3(p.center[0], p.center[1], globeRadius + 0.5)
-  );
+  const fwdPts = DEMO_DRIFT.forward.map((p) => latLonToVec3(p.center[0], p.center[1], R + 0.4));
   if (fwdPts.length > 1) {
-    const fwdGeom = new THREE.BufferGeometry().setFromPoints(fwdPts);
-    const fwdMat = new THREE.LineDashedMaterial({
-      color: 0xf97316, transparent: true, opacity: 0.3, dashSize: 1.5, gapSize: 1,
-    });
-    const fwdLine = new THREE.Line(fwdGeom, fwdMat);
-    fwdLine.computeLineDistances();
-    group.add(fwdLine);
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(fwdPts),
+      new THREE.LineDashedMaterial({ color: 0xf97316, transparent: true, opacity: 0.4, dashSize: 1.5, gapSize: 1 })
+    );
+    line.computeLineDistances();
+    g.add(line);
   }
 
-  return group;
+  return g;
 }
 
 // ─── DETECTION ZONE ─────────────────────────────────────────────────
 
-function createDetectionZone(incident: OilSpillIncident, globeRadius: number): THREE.Group {
-  const group = new THREE.Group();
-  group.name = "detectionZone";
-  const center = latLonToVector3(incident.polygon.center[0], incident.polygon.center[1], globeRadius + 0.5);
+function createDetectionZone(incident: typeof DEMO_INCIDENT, R: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "detectionZone";
+  const center = latLonToVec3(incident.polygon.center[0], incident.polygon.center[1], R + 0.4);
 
-  const ring1 = new THREE.Mesh(
-    new THREE.RingGeometry(6, 6.4, 48),
-    new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
-  );
-  ring1.position.copy(center);
-  ring1.lookAt(new THREE.Vector3(0, 0, 0));
-  group.add(ring1);
+  [7, 12].forEach((radius, i) => {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius, radius + 0.4, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xfb923c,
+        transparent: true,
+        opacity: i === 0 ? 0.3 : 0.1,
+        side: THREE.DoubleSide,
+      })
+    );
+    ring.position.copy(center);
+    ring.lookAt(new THREE.Vector3(0, 0, 0));
+    g.add(ring);
+  });
 
-  const ring2 = new THREE.Mesh(
-    new THREE.RingGeometry(10, 10.3, 48),
-    new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.08, side: THREE.DoubleSide })
-  );
-  ring2.position.copy(center);
-  ring2.lookAt(new THREE.Vector3(0, 0, 0));
-  group.add(ring2);
-
-  return group;
+  return g;
 }
 
 // ─── MAIN COMPONENT ─────────────────────────────────────────────────
@@ -497,14 +556,12 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
-    globe: THREE.Mesh;
-    globeRadius: number;
+    R: number;
   } | null>(null);
   const animFrameRef = useRef<number>(0);
   const mouseRef = useRef({ isDragging: false, lastX: 0, lastY: 0 });
-  const rotationRef = useRef({ x: 0.25, y: -1.1 });
+  const rotRef = useRef({ x: 0.35, y: -1.0 });
 
-  // UI state
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [vesselFilter, setVesselFilter] = useState<"all" | "near" | "watch">("all");
@@ -521,33 +578,27 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(1);
   const [timeRange, setTimeRange] = useState<"now" | "3h" | "6h" | "12h" | "24h">("now");
-  const [showRightPanel, setShowRightPanel] = useState(true);
 
   const incident = DEMO_INCIDENT;
-  const topAttribution = DEMO_ATTRIBUTIONS[0];
 
-  const timeSteps = [
-    "08:45", "09:00", "09:05", "09:12", "09:17", "09:28", "09:31", "09:42", "09:48", "09:50",
-    "09:52", "09:54", "09:56", "10:00", "10:02", "10:05",
-  ];
+  const timeSteps = ["08:45", "09:00", "09:05", "09:12", "09:17", "09:28", "09:31", "09:42", "09:48", "09:50", "09:52", "09:54", "09:56", "10:00", "10:02", "10:05"];
 
   const eventTimeline = [
     { time: "09:20 UTC", event: "Satellite pass", color: "#44cc88" },
     { time: "09:25 UTC", event: "SAR image acquired", color: "#44cc88" },
     { time: "09:27 UTC", event: "Anomaly detected", color: "#fb923c" },
     { time: "09:28 UTC", event: "Oil spill classified", color: "#fb923c" },
-    { time: "09:31 UTC", event: "Nearby vessels identified", color: "#4a9eff" },
+    { time: "09:31 UTC", event: "Nearby vessels identified", color: "#55aaff" },
   ];
 
-  // Filtered vessels
   const filteredVessels = DEMO_VESSELS.filter((v) => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       if (!v.name.toLowerCase().includes(q) && !v.mmsi.includes(q)) return false;
     }
     if (vesselFilter === "near") {
-      const dist = Math.sqrt((v.lat - incident.polygon.center[0]) ** 2 + (v.lon - incident.polygon.center[1]) ** 2);
-      return dist < 0.05;
+      const d = Math.sqrt((v.lat - incident.polygon.center[0]) ** 2 + (v.lon - incident.polygon.center[1]) ** 2);
+      return d < 0.05;
     }
     return true;
   });
@@ -557,83 +608,85 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     const container = containerRef.current;
     if (!container) return;
 
-    const { scene, camera, renderer, globe, globeRadius } = createGlobeScene(container);
-    sceneRef.current = { scene, camera, renderer, globe, globeRadius };
+    const { scene, camera, renderer, R } = createScene(container);
+    sceneRef.current = { scene, camera, renderer, R };
 
-    // Add objects
-    const vesselGroup = new THREE.Group();
-    vesselGroup.name = "vessels";
-    DEMO_VESSELS.forEach((v) => vesselGroup.add(createVesselMarker(v, globeRadius, false)));
-    scene.add(vesselGroup);
+    // Add continents
+    scene.add(createContinents(R));
 
-    const trackGroup = new THREE.Group();
-    trackGroup.name = "tracks";
-    DEMO_VESSELS.forEach((v) => trackGroup.add(createVesselTrack(v, globeRadius, false)));
-    scene.add(trackGroup);
+    // Add labels
+    const labels = [
+      ["Mumbai", 19.0, 73.0],
+      ["Karachi", 24.8, 67.0],
+      ["Salalah", 17.0, 54.0],
+      ["Mangaluru", 12.9, 74.9],
+      ["Colombo", 6.9, 79.8],
+    ] as const;
+    labels.forEach(([name, lat, lon]) => scene.add(createTextLabel(name, lat, lon, R, "#4a8ab5")));
 
-    scene.add(createSpillPolygon(incident, globeRadius));
-    scene.add(createSatellitePath(globeRadius));
-    scene.add(createCoastlines(globeRadius));
-    scene.add(createDriftPaths(globeRadius));
-    scene.add(createDetectionZone(incident, globeRadius));
+    // Region labels (larger, dimmer)
+    scene.add(createTextLabel("ARABIAN SEA", 15, 66, R, "#1a4466"));
+    scene.add(createTextLabel("BAY OF BENGAL", 14, 88, R, "#1a4466"));
+    scene.add(createTextLabel("INDIAN OCEAN", 0, 75, R, "#1a4466"));
+
+    // Vessels
+    const vGroup = new THREE.Group();
+    vGroup.name = "vessels";
+    DEMO_VESSELS.forEach((v) => vGroup.add(createVessel(v, R, false)));
+    scene.add(vGroup);
+
+    const tGroup = new THREE.Group();
+    tGroup.name = "tracks";
+    DEMO_VESSELS.forEach((v) => tGroup.add(createTrack(v, R, false)));
+    scene.add(tGroup);
+
+    scene.add(createSpill(incident, R));
+    scene.add(createSatellite(R));
+    scene.add(createDrift(R));
+    scene.add(createDetectionZone(incident, R));
 
     // Mouse orbit
-    const onMouseDown = (e: MouseEvent) => {
-      mouseRef.current.isDragging = true;
+    const onDown = (e: MouseEvent) => { mouseRef.current = { isDragging: true, lastX: e.clientX, lastY: e.clientY }; };
+    const onMove = (e: MouseEvent) => {
+      if (!mouseRef.current.isDragging) return;
+      rotRef.current.y += (e.clientX - mouseRef.current.lastX) * 0.005;
+      rotRef.current.x = Math.max(-0.8, Math.min(0.8, rotRef.current.x + (e.clientY - mouseRef.current.lastY) * 0.005));
       mouseRef.current.lastX = e.clientX;
       mouseRef.current.lastY = e.clientY;
     };
-    const onMouseMove = (e: MouseEvent) => {
-      if (mouseRef.current.isDragging) {
-        rotationRef.current.y += (e.clientX - mouseRef.current.lastX) * 0.005;
-        rotationRef.current.x = Math.max(-1.0, Math.min(1.0,
-          rotationRef.current.x + (e.clientY - mouseRef.current.lastY) * 0.005
-        ));
-        mouseRef.current.lastX = e.clientX;
-        mouseRef.current.lastY = e.clientY;
-      }
-    };
-    const onMouseUp = () => { mouseRef.current.isDragging = false; };
+    const onUp = () => { mouseRef.current.isDragging = false; };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const dir = camera.position.clone().normalize();
-      const dist = camera.position.length();
-      camera.position.copy(dir.multiplyScalar(Math.max(160, Math.min(500, dist + e.deltaY * 0.5))));
+      const d = camera.position.length();
+      camera.position.copy(dir.multiplyScalar(Math.max(180, Math.min(500, d + e.deltaY * 0.5))));
     };
 
-    container.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    container.addEventListener("mousedown", onDown);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
     container.addEventListener("wheel", onWheel, { passive: false });
 
-    // Animation
-    let time = 0;
+    let t = 0;
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
-      time += 0.003;
+      t += 0.003;
 
-      const radius = camera.position.length();
-      camera.position.x += (radius * Math.cos(rotationRef.current.x) * Math.sin(rotationRef.current.y) - camera.position.x) * 0.06;
-      camera.position.y += (radius * Math.sin(rotationRef.current.x) - camera.position.y) * 0.06;
-      camera.position.z += (radius * Math.cos(rotationRef.current.x) * Math.cos(rotationRef.current.y) - camera.position.z) * 0.06;
-
-      camera.lookAt(latLonToVector3(12, 80, 0));
+      const r = camera.position.length();
+      camera.position.x += (r * Math.cos(rotRef.current.x) * Math.sin(rotRef.current.y) - camera.position.x) * 0.06;
+      camera.position.y += (r * Math.sin(rotRef.current.x) - camera.position.y) * 0.06;
+      camera.position.z += (r * Math.cos(rotRef.current.x) * Math.cos(rotRef.current.y) - camera.position.z) * 0.06;
+      camera.lookAt(0, 0, 0);
 
       // Animate satellite
-      const satGroup = scene.getObjectByName("satellite");
-      if (satGroup) {
-        satGroup.children.forEach((child) => {
-          if (child instanceof THREE.Mesh && child.geometry.type === "OctahedronGeometry") {
-            child.rotation.y = time * 3;
-          }
-        });
-      }
+      const sat = scene.getObjectByName("satellite");
+      if (sat) sat.children.forEach((c) => { if (c instanceof THREE.Mesh && c.geometry.type === "OctahedronGeometry") c.rotation.y = t * 3; });
 
       // Pulse detection zone
-      const dzGroup = scene.getObjectByName("detectionZone");
-      if (dzGroup && dzGroup.children[0] instanceof THREE.Mesh) {
-        const s = 1 + Math.sin(time * 3) * 0.08;
-        dzGroup.children[0].scale.set(s, s, 1);
+      const dz = scene.getObjectByName("detectionZone");
+      if (dz && dz.children[0] instanceof THREE.Mesh) {
+        const s = 1 + Math.sin(t * 3) * 0.08;
+        dz.children[0].scale.set(s, s, 1);
       }
 
       renderer.render(scene, camera);
@@ -649,9 +702,9 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
     return () => {
       cancelAnimationFrame(animFrameRef.current);
-      container.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      container.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
       container.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onResize);
       renderer.dispose();
@@ -659,47 +712,37 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     };
   }, []);
 
-  // Toggle layers
+  // Layer toggle
   useEffect(() => {
     if (!sceneRef.current) return;
     const { scene } = sceneRef.current;
-    const nameMap: Record<string, string> = {
+    const map: Record<string, string> = {
       globe_vessels: "vessels", globe_tracks: "tracks", globe_spill: "spill",
       globe_satellite: "satellite", globe_boundaries: "boundaries",
       globe_detection_zones: "detectionZone",
     };
-    layers.forEach((l) => {
-      const name = nameMap[l.id];
-      if (name) {
-        const obj = scene.getObjectByName(name);
-        if (obj) obj.visible = l.enabled;
-      }
-    });
+    layers.forEach((l) => { const n = map[l.id]; if (n) { const o = scene.getObjectByName(n); if (o) o.visible = l.enabled; } });
   }, [layers]);
 
   // Playback
   useEffect(() => {
     if (!isPlaying) return;
-    const interval = setInterval(() => {
-      setTimeStep((prev) => {
-        if (prev >= timeSteps.length - 1) { setIsPlaying(false); return prev; }
-        return prev + 1;
-      });
+    const iv = setInterval(() => {
+      setTimeStep((p) => { if (p >= timeSteps.length - 1) { setIsPlaying(false); return p; } return p + 1; });
     }, 1000 / playSpeed);
-    return () => clearInterval(interval);
+    return () => clearInterval(iv);
   }, [isPlaying, playSpeed, timeSteps.length]);
 
   const toggleLayer = useCallback((id: Globe3dLayerId) => {
-    setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, enabled: !l.enabled } : l)));
+    setLayers((p) => p.map((l) => (l.id === id ? { ...l, enabled: !l.enabled } : l)));
   }, []);
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#030508] text-zinc-100 overflow-hidden select-none">
+    <div className="fixed inset-0 flex flex-col bg-[#020508] text-zinc-100 overflow-hidden select-none">
 
-      {/* ─── TOP STATUS BAR ─────────────────────────────────── */}
+      {/* ─── TOP BAR ──────────────────────────────────────────── */}
       <header className="flex h-12 items-center justify-between border-b border-zinc-800/50 bg-[#060a10]/95 px-4 z-30 backdrop-blur-sm">
         <div className="flex items-center gap-5">
-          {/* Brand */}
           <div className="flex items-center gap-2">
             <div className="flex size-7 items-center justify-center rounded-full border border-cyan-500/30 bg-cyan-500/10">
               <Navigation className="size-3.5 text-cyan-400" />
@@ -709,27 +752,17 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
               <div className="text-[7px] text-zinc-500 uppercase tracking-wider leading-none">Maritime Intelligence</div>
             </div>
           </div>
-
           <div className="h-6 w-px bg-zinc-800" />
-
-          {/* Status metrics */}
-          <div className="flex items-center gap-4">
-            <StatusMetric label="UTC TIME" value={new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase() + "  " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} />
-            <StatusMetric label="ACTIVE VESSELS" value={`${DEMO_VESSELS.length}`} />
-            <StatusMetric label="DETECTIONS" value="3" />
-            <StatusMetric label="SATELLITE" value="SENTINEL-1A" />
-            <StatusMetric label="WIND" value={`${DEMO_ENVIRONMENTAL.windSpeed} kn ${DEMO_ENVIRONMENTAL.windDirectionLabel}`} />
-            <StatusMetric label="SEA STATE" value="MODERATE" />
-          </div>
+          <StatusMetric label="UTC TIME" value={new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase() + "  " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} />
+          <StatusMetric label="ACTIVE VESSELS" value={`${DEMO_VESSELS.length}`} />
+          <StatusMetric label="DETECTIONS" value="3" />
+          <StatusMetric label="SATELLITE" value="SENTINEL-1A" />
+          <StatusMetric label="WIND" value={`${DEMO_ENVIRONMENTAL.windSpeed} kn ${DEMO_ENVIRONMENTAL.windDirectionLabel}`} />
+          <StatusMetric label="SEA STATE" value="MODERATE" />
         </div>
-
         <div className="flex items-center gap-2">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1.5 rounded border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-[9px] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"
-          >
-            <ArrowLeft className="size-3" />
-            Back
+          <button onClick={onBack} className="flex items-center gap-1.5 rounded border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-[9px] text-zinc-400 hover:text-zinc-200 transition-colors">
+            <ArrowLeft className="size-3" /> Back
           </button>
           <div className="rounded bg-cyan-500/15 border border-cyan-500/30 px-3 py-1.5">
             <span className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider">3D Intelligence</span>
@@ -742,134 +775,63 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ─── LEFT PANEL ───────────────────────────────────── */}
+        {/* ─── LEFT PANEL ────────────────────────────────────── */}
         <aside className="flex h-full z-20">
-          {/* Icon sidebar */}
           <div className="w-10 flex flex-col items-center gap-1 py-2 border-r border-zinc-800/50 bg-[#060a10]/95">
             {[Search, Ship, Layers, Target, Radar, Compass, Wind].map((Icon, i) => (
-              <button
-                key={i}
-                className={cn(
-                  "flex size-7 items-center justify-center rounded transition-colors",
-                  i === 1 ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
-                )}
-              >
+              <button key={i} className={cn("flex size-7 items-center justify-center rounded transition-colors", i === 1 ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800")}>
                 <Icon className="size-3.5" />
               </button>
             ))}
           </div>
 
-          {/* Vessel panel */}
           <div className="w-56 border-r border-zinc-800/50 bg-[#060a10]/95 flex flex-col overflow-hidden">
-            {/* Header */}
             <div className="px-3 py-2.5 border-b border-zinc-800/50">
               <h2 className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Vessels</h2>
             </div>
-
-            {/* Search */}
             <div className="px-3 py-2 border-b border-zinc-800/50">
               <div className="flex items-center gap-1.5 rounded border border-zinc-700/50 bg-zinc-800/30 px-2 py-1">
                 <Search className="size-3 text-zinc-500" />
-                <input
-                  type="text"
-                  placeholder="Search vessel or MMSI"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1 bg-transparent text-[10px] text-zinc-300 placeholder-zinc-600 outline-none"
-                />
+                <input type="text" placeholder="Search vessel or MMSI" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-1 bg-transparent text-[10px] text-zinc-300 placeholder-zinc-600 outline-none" />
                 <Filter className="size-3 text-zinc-600" />
               </div>
             </div>
-
-            {/* Filter tabs */}
             <div className="flex items-center gap-1 px-3 py-1.5 border-b border-zinc-800/50">
-              {[
-                { key: "all" as const, label: `ALL ${DEMO_VESSELS.length}` },
-                { key: "near" as const, label: `NEAR SPILL 6` },
-                { key: "watch" as const, label: `WATCHLIST 2` },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setVesselFilter(tab.key)}
-                  className={cn(
-                    "text-[8px] px-2 py-0.5 rounded transition-colors",
-                    vesselFilter === tab.key
-                      ? "bg-cyan-500/15 text-cyan-400"
-                      : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  {tab.label}
-                </button>
+              {([["all", `ALL ${DEMO_VESSELS.length}`], ["near", "NEAR SPILL 6"], ["watch", "WATCHLIST 2"]] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setVesselFilter(k)} className={cn("text-[8px] px-2 py-0.5 rounded transition-colors", vesselFilter === k ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300")}>{l}</button>
               ))}
             </div>
-
-            {/* Vessel list */}
             <div className="flex-1 overflow-y-auto">
               {filteredVessels.map((v) => {
                 const attr = DEMO_ATTRIBUTIONS.find((a) => a.vesselId === v.mmsi);
-                const isSelected = selectedVessel?.mmsi === v.mmsi;
+                const sel = selectedVessel?.mmsi === v.mmsi;
                 return (
-                  <button
-                    key={v.mmsi}
-                    onClick={() => setSelectedVessel(isSelected ? null : v)}
-                    className={cn(
-                      "w-full text-left px-3 py-2 border-b border-zinc-800/30 transition-colors",
-                      isSelected ? "bg-cyan-500/8" : "hover:bg-zinc-800/30"
-                    )}
-                  >
+                  <button key={v.mmsi} onClick={() => setSelectedVessel(sel ? null : v)} className={cn("w-full text-left px-3 py-2 border-b border-zinc-800/30 transition-colors", sel ? "bg-cyan-500/8" : "hover:bg-zinc-800/30")}>
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-[10px] font-semibold text-zinc-200">{v.name}</span>
                       <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">ACTIVE</span>
                     </div>
                     <div className="text-[8px] text-zinc-500 font-mono mb-0.5">MMSI {v.mmsi}</div>
                     <div className="flex items-center gap-3 text-[9px] text-zinc-400">
-                      <span>{v.speed} kn</span>
-                      <span>› {v.heading}°</span>
+                      <span>{v.speed} kn</span><span>› {v.heading}°</span>
                     </div>
-                    {attr && (
-                      <div className="mt-1 flex items-center gap-1">
-                        <div className={cn(
-                          "text-[8px] font-bold",
-                          attr.rank === 1 ? "text-orange-400" : "text-zinc-500"
-                        )}>
-                          Source: {attr.overallScore}/100
-                        </div>
-                      </div>
-                    )}
+                    {attr && <div className="mt-1 text-[8px] font-bold text-orange-400">Source: {attr.overallScore}/100</div>}
                   </button>
                 );
               })}
             </div>
-
             <div className="px-3 py-2 border-t border-zinc-800/50">
-              <button className="w-full text-center text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors py-1">
-                VIEW ALL VESSELS
-              </button>
+              <button className="w-full text-center text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors py-1">VIEW ALL VESSELS</button>
             </div>
-
-            {/* Layer toggles */}
             <div className="px-3 py-2.5 border-t border-zinc-800/50">
-              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <Layers className="size-3" />
-                Layers
-              </h3>
+              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Layers className="size-3" />Layers</h3>
               <div className="space-y-1">
                 {layers.map((l) => (
-                  <button
-                    key={l.id}
-                    onClick={() => toggleLayer(l.id)}
-                    className="flex items-center gap-2 w-full text-left"
-                  >
+                  <button key={l.id} onClick={() => toggleLayer(l.id)} className="flex items-center gap-2 w-full text-left">
                     <div className="text-[8px] text-zinc-600">✦</div>
                     <span className="text-[10px] text-zinc-400 flex-1">{l.label}</span>
-                    <div className={cn(
-                      "w-7 h-3.5 rounded-full transition-colors relative",
-                      l.enabled ? "bg-cyan-500/30" : "bg-zinc-700/50"
-                    )}>
-                      <div className={cn(
-                        "absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all",
-                        l.enabled ? "left-3.5 bg-cyan-400" : "left-0.5 bg-zinc-500"
-                      )} />
+                    <div className={cn("w-7 h-3.5 rounded-full transition-colors relative", l.enabled ? "bg-cyan-500/30" : "bg-zinc-700/50")}>
+                      <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all", l.enabled ? "left-3.5 bg-cyan-400" : "left-0.5 bg-zinc-500")} />
                     </div>
                   </button>
                 ))}
@@ -878,181 +840,111 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           </div>
         </aside>
 
-        {/* ─── 3D GLOBE ────────────────────────────────────── */}
+        {/* ─── 3D GLOBE ─────────────────────────────────────── */}
         <main className="flex-1 relative">
           <div ref={containerRef} className="absolute inset-0" />
 
-          {/* Vessel labels floating on globe */}
-          <div className="absolute inset-0 pointer-events-none z-10">
-            {/* Navigation compass */}
-            <div className="absolute bottom-20 left-6">
-              <div className="flex flex-col items-center gap-0.5">
-                <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300">
-                  <ChevronRight className="size-3 rotate-[-90deg]" />
-                </button>
-                <div className="flex gap-0.5">
-                  <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300">
-                    <ChevronRight className="size-3 rotate-[180deg]" />
-                  </button>
-                  <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300">
-                    <Crosshair className="size-3" />
-                  </button>
-                  <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300">
-                    <ChevronRight className="size-3" />
-                  </button>
-                </div>
-                <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300">
-                  <ChevronRight className="size-3 rotate-90" />
-                </button>
+          {/* Compass nav */}
+          <div className="absolute bottom-20 left-6 z-10">
+            <div className="flex flex-col items-center gap-0.5">
+              <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300"><ChevronRight className="size-3 rotate-[-90deg]" /></button>
+              <div className="flex gap-0.5">
+                <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300"><ChevronRight className="size-3 rotate-[180deg]" /></button>
+                <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300"><Crosshair className="size-3" /></button>
+                <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300"><ChevronRight className="size-3" /></button>
               </div>
-              <div className="mt-1 flex flex-col items-center gap-0.5">
-                <button className="size-6 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300 text-[10px]">
-                  +
-                </button>
-                <button className="size-6 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300 text-[10px]">
-                  −
-                </button>
-              </div>
+              <button className="size-7 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300"><ChevronRight className="size-3 rotate-90" /></button>
+            </div>
+            <div className="mt-1 flex flex-col items-center gap-0.5">
+              <button className="size-6 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300 text-[10px]">+</button>
+              <button className="size-6 rounded border border-zinc-700/50 bg-[#060a10]/80 flex items-center justify-center text-zinc-500 hover:text-zinc-300 text-[10px]">−</button>
             </div>
           </div>
 
-          {/* ─── BOTTOM TIMELINE ───────────────────────────── */}
+          {/* ─── BOTTOM TIMELINE ─────────────────────────────── */}
           <div className="absolute bottom-0 left-0 right-0 z-20">
             <div className="flex items-center gap-3 px-4 py-2.5 bg-[#060a10]/95 border-t border-zinc-800/50 backdrop-blur-sm">
-              {/* Play controls */}
               <button onClick={() => setIsPlaying(!isPlaying)} className="text-zinc-400 hover:text-zinc-200">
                 {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
               </button>
-              <button onClick={() => setPlaySpeed((s) => s === 1 ? 2 : s === 2 ? 4 : 1)} className="text-[9px] text-zinc-500 hover:text-zinc-300 font-mono min-w-[20px]">
-                {playSpeed}x
-              </button>
-
+              <button onClick={() => setPlaySpeed((s) => s === 1 ? 2 : s === 2 ? 4 : 1)} className="text-[9px] text-zinc-500 hover:text-zinc-300 font-mono min-w-[20px]">{playSpeed}x</button>
               <div className="h-4 w-px bg-zinc-800" />
-
-              {/* Time scrubber */}
               <div className="flex-1 flex items-center gap-2">
                 <span className="text-[8px] font-mono text-zinc-600">08:45</span>
                 <div className="flex-1 relative">
                   <div className="h-0.5 bg-zinc-800 rounded-full w-full" />
-                  <div
-                    className="absolute top-0 h-0.5 bg-cyan-500/50 rounded-full"
-                    style={{ width: `${(timeStep / (timeSteps.length - 1)) * 100}%` }}
-                  />
-                  {/* Time markers */}
+                  <div className="absolute top-0 h-0.5 bg-cyan-500/50 rounded-full" style={{ width: `${(timeStep / (timeSteps.length - 1)) * 100}%` }} />
                   <div className="flex justify-between mt-1">
-                    {["09:00", "09:15", "09:30", "09:45", "10:00", "10:15"].map((t) => (
-                      <span key={t} className="text-[7px] font-mono text-zinc-700">{t}</span>
-                    ))}
+                    {["09:00", "09:15", "09:30", "09:45", "10:00", "10:15"].map((t) => <span key={t} className="text-[7px] font-mono text-zinc-700">{t}</span>)}
                   </div>
-                  {/* Current position marker */}
-                  <div
-                    className="absolute -top-1.5 w-3 h-3 rounded-full bg-cyan-400 border-2 border-[#060a10] cursor-pointer"
-                    style={{ left: `calc(${(timeStep / (timeSteps.length - 1)) * 100}% - 6px)` }}
-                  />
+                  <div className="absolute -top-1.5 w-3 h-3 rounded-full bg-cyan-400 border-2 border-[#060a10] cursor-pointer" style={{ left: `calc(${(timeStep / (timeSteps.length - 1)) * 100}% - 6px)` }} />
                 </div>
                 <span className="text-[8px] font-mono text-zinc-600">10:15</span>
               </div>
-
               <div className="h-4 w-px bg-zinc-800" />
-
-              {/* Current time label */}
               <span className="text-[10px] font-mono text-zinc-300 font-semibold">{timeSteps[timeStep]}</span>
-
               <div className="h-4 w-px bg-zinc-800" />
-
-              {/* Range buttons */}
               <div className="flex items-center gap-0.5">
                 {(["now", "3h", "6h", "12h", "24h"] as const).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setTimeRange(r)}
-                    className={cn(
-                      "text-[8px] px-2 py-0.5 rounded font-medium transition-colors",
-                      timeRange === r ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300"
-                    )}
-                  >
-                    {r.toUpperCase()}
-                  </button>
+                  <button key={r} onClick={() => setTimeRange(r)} className={cn("text-[8px] px-2 py-0.5 rounded font-medium transition-colors", timeRange === r ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300")}>{r.toUpperCase()}</button>
                 ))}
               </div>
             </div>
           </div>
         </main>
 
-        {/* ─── RIGHT PANEL ─────────────────────────────────── */}
-        {showRightPanel && (
-          <aside className="w-72 border-l border-zinc-800/50 bg-[#060a10]/95 flex flex-col overflow-y-auto z-20">
-            {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-800/50">
-              <h2 className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Detection Event</h2>
-              <button onClick={() => setShowRightPanel(false)} className="text-zinc-600 hover:text-zinc-300">
-                <X className="size-3.5" />
-              </button>
+        {/* ─── RIGHT PANEL ──────────────────────────────────── */}
+        <aside className="w-72 border-l border-zinc-800/50 bg-[#060a10]/95 flex flex-col overflow-y-auto z-20">
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-800/50">
+            <h2 className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Detection Event</h2>
+            <button onClick={onBack} className="text-zinc-600 hover:text-zinc-300"><X className="size-3.5" /></button>
+          </div>
+          <div className="p-3 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-zinc-100">{incident.incidentNumber}</span>
+              <span className="text-[7px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 font-bold uppercase">High Confidence</span>
             </div>
-
-            <div className="p-3 space-y-4">
-              {/* Event ID */}
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-bold text-zinc-100">{incident.incidentNumber}</span>
-                  <span className="text-[7px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 font-bold uppercase">High Confidence</span>
-                </div>
-              </div>
-
-              {/* Event Details */}
-              <div className="space-y-2.5">
-                <EventField label="DETECTED" value={new Date(incident.detectedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " UTC"} />
-                <EventField label="LOCATION" value={`${incident.coordinates[0].toFixed(2)}° N, ${incident.coordinates[1].toFixed(2)}° E`} />
-                <EventField label="AREA" value={`${incident.polygon.areaKm2} km²`} />
-                <EventField label="CONFIDENCE" value={`${incident.confidence.score}%`} color="text-cyan-400" />
-                <EventField label="SOURCE" value="Sentinel-1A (SAR)" />
-              </div>
-
-              {/* Timeline */}
-              <div>
-                <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Event Timeline</h3>
-                <div className="space-y-1.5">
-                  {eventTimeline.map((ev, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <div className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ev.color + "60", border: `1px solid ${ev.color}` }} />
-                      <div>
-                        <span className="text-[9px] font-mono text-zinc-400">{ev.time}</span>
-                        <span className="text-[9px] text-zinc-500 ml-2">{ev.event}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Affected Vessels */}
-              <div>
-                <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Affected Vessels</h3>
-                <div className="space-y-2">
-                  {DEMO_VESSELS.slice(0, 3).map((v, i) => (
-                    <div key={v.mmsi} className="flex items-start gap-2">
-                      <Ship className="size-3 text-zinc-600 mt-0.5 shrink-0" />
-                      <div>
-                        <div className="text-[10px] font-semibold text-zinc-300">{v.name}</div>
-                        <div className="text-[9px] text-zinc-500">{v.speed} kn › {v.heading}° · {(6 + i * 2.5).toFixed(1)} nm</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* View Report button */}
-              <button className="w-full rounded border border-zinc-700 bg-zinc-800/30 py-2 text-[10px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors uppercase tracking-wider">
-                View Full Report
-              </button>
+            <div className="space-y-2.5">
+              <EvtField label="DETECTED" value={new Date(incident.detectedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " UTC"} />
+              <EvtField label="LOCATION" value={`${incident.coordinates[0].toFixed(2)}° N, ${incident.coordinates[1].toFixed(2)}° E`} />
+              <EvtField label="AREA" value={`${incident.polygon.areaKm2} km²`} />
+              <EvtField label="CONFIDENCE" value={`${incident.confidence.score}%`} color="text-cyan-400" />
+              <EvtField label="SOURCE" value="Sentinel-1A (SAR)" />
             </div>
-          </aside>
-        )}
+            <div>
+              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Event Timeline</h3>
+              <div className="space-y-1.5">
+                {eventTimeline.map((ev, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <div className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ev.color + "60", border: `1px solid ${ev.color}` }} />
+                    <div><span className="text-[9px] font-mono text-zinc-400">{ev.time}</span><span className="text-[9px] text-zinc-500 ml-2">{ev.event}</span></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Affected Vessels</h3>
+              <div className="space-y-2">
+                {DEMO_VESSELS.slice(0, 3).map((v, i) => (
+                  <div key={v.mmsi} className="flex items-start gap-2">
+                    <Ship className="size-3 text-zinc-600 mt-0.5 shrink-0" />
+                    <div>
+                      <div className="text-[10px] font-semibold text-zinc-300">{v.name}</div>
+                      <div className="text-[9px] text-zinc-500">{v.speed} kn › {v.heading}° · {(6 + i * 2.5).toFixed(1)} nm</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button className="w-full rounded border border-zinc-700 bg-zinc-800/30 py-2 text-[10px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors uppercase tracking-wider">View Full Report</button>
+          </div>
+        </aside>
       </div>
     </div>
   );
 }
 
-// ─── HELPER COMPONENTS ─────────────────────────────────────────────
+// ─── HELPERS ────────────────────────────────────────────────────────
 
 function StatusMetric({ label, value }: { label: string; value: string }) {
   return (
@@ -1063,7 +955,7 @@ function StatusMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function EventField({ label, value, color }: { label: string; value: string; color?: string }) {
+function EvtField({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
       <div className="text-[7px] text-zinc-600 uppercase tracking-wider leading-none mb-0.5">{label}</div>
