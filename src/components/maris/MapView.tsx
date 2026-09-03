@@ -1,4 +1,4 @@
-// MARIS — Full-screen interactive map using Leaflet
+// maris — Full-screen interactive map using Leaflet
 import { useEffect, useRef, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -10,6 +10,8 @@ import type {
   HyperspectralResult,
   EnvironmentalConditions,
 } from "@/data/types";
+
+const CARTO_API_KEY = "cb1_2u58_1_bf57649a9ebd93a4418be433";
 
 interface MapViewProps {
   incident: OilSpillIncident | null;
@@ -75,13 +77,12 @@ export default function MapView({
       attributionControl: true,
     });
 
-    // Dark tiles for maritime command feel
+    // Dark tiles via Carto basemaps API
     L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${CARTO_API_KEY}`,
       {
         attribution:
           '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-        subdomains: "abcd",
         maxZoom: 19,
       }
     ).addTo(map);
@@ -428,7 +429,6 @@ export default function MapView({
     if (!thickEnabled) return;
 
     // Add thickness zones within spill polygon
-    const colors = ["#94a3b8", "#64748b", "#334155", "#1e293b"];
     const cx = incident.polygon.center[0];
     const cy = incident.polygon.center[1];
 
