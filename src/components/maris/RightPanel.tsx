@@ -285,8 +285,8 @@ function OverviewPanel({
       <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2">
         <div className="flex items-center gap-1.5 text-[9px] text-amber-400/80">
           <Info className="size-3" />
-          Demonstration Data — all vessel identities and detection results are
-          synthetic for prototype evaluation
+          Demonstration data — vessel identities and detection results are
+          synthetic. Not derived from live satellite or AIS feeds.
         </div>
       </div>
     </div>

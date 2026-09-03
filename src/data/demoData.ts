@@ -1,5 +1,5 @@
 // MARIS — Complete demonstration scenario data
-// Fictional incident for hackathon prototype demonstration
+// Fictional incident for prototype demonstration
 
 import type {
   OilSpillIncident,

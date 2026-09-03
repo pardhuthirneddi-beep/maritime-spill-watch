@@ -72,11 +72,11 @@ export default function Sidebar({
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <h1 className="text-[11px] font-bold tracking-widest text-zinc-100 uppercase">
-              MARIS
+            <h1 className="text-[11px] font-semibold tracking-[0.2em] text-zinc-300 lowercase">
+              maris
             </h1>
             <p className="text-[8px] text-zinc-500 leading-none">
-              Maritime Intelligence
+              Oil Spill Intelligence
             </p>
           </div>
         )}
@@ -209,12 +209,12 @@ export default function Sidebar({
               {isAnalyzing ? (
                 <>
                   <div className="size-3 rounded-full border-2 border-zinc-500 border-t-zinc-300 animate-spin" />
-                  Analyzing...
+                  Processing...
                 </>
               ) : (
                 <>
                   <Compass className="size-3.5" />
-                  Run Full Investigation
+                  Run Investigation
                 </>
               )}
             </button>

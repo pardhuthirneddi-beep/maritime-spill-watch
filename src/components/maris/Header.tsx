@@ -18,7 +18,7 @@ export default function Header({ incident, activeView, isAnalyzing }: HeaderProp
             <div className="flex items-center gap-1.5">
               <Radio className="size-3 text-orange-400 animate-pulse" />
               <span className="text-[10px] font-semibold text-orange-400 uppercase">
-                Active Investigation
+                Investigation Active
               </span>
             </div>
             <div className="h-4 w-px bg-zinc-800" />
@@ -34,7 +34,7 @@ export default function Header({ incident, activeView, isAnalyzing }: HeaderProp
           <div className="flex items-center gap-1.5">
             <Satellite className="size-3 text-zinc-600" />
             <span className="text-[10px] text-zinc-600">
-              No active incident — click Run Investigation
+              No active incident — run an investigation to begin
             </span>
           </div>
         )}
@@ -45,7 +45,7 @@ export default function Header({ incident, activeView, isAnalyzing }: HeaderProp
         <div className="flex items-center gap-1.5 rounded border border-amber-500/30 bg-amber-500/5 px-2 py-0.5">
           <div className="size-1.5 rounded-full bg-amber-400" />
           <span className="text-[8px] font-semibold text-amber-400/80 uppercase tracking-wider">
-            Demonstration Mode
+            Demo Data
           </span>
         </div>
       </div>

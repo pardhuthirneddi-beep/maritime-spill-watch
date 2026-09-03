@@ -241,12 +241,12 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <h2 className="text-lg font-semibold text-zinc-200 mb-1">
-                  Maritime Oil Spill Intelligence
+                  AI-powered maritime intelligence
                 </h2>
                 <p className="text-[11px] text-zinc-500 mb-4 leading-relaxed">
-                  SAR satellite detection → Oil spill analysis → AIS vessel correlation
-                  → Source attribution → Drift modelling → Hyperspectral thickness →
-                  Investigation report
+                  Detect possible oil spills from satellite imagery, correlate vessel
+                  movements, model drift, estimate thickness, and identify the
+                  probable source — fully explained.
                 </p>
                 <button
                   onClick={runInvestigation}
@@ -261,10 +261,10 @@ export default function Dashboard() {
                   >
                     <polygon points="5,3 19,12 5,21" />
                   </svg>
-                  Run Full Investigation
+                  Run Investigation
                 </button>
                 <p className="text-[9px] text-zinc-600 mt-3">
-                  Demonstration mode — all data is synthetic
+                  Uses demonstration data — no live satellite feeds
                 </p>
               </div>
             </div>

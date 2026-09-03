@@ -25,13 +25,13 @@ interface ReportData {
 }
 
 const DISCLAIMER =
-  "Automated analytical result for decision support. Not a legal determination of responsibility. " +
-  "All vessel attributions are probabilistic estimates requiring field/investigative confirmation. " +
-  "This report was generated using demonstration data for prototype evaluation purposes.";
+  "Automated analytical result generated for decision support. Not a legal determination of responsibility. " +
+  "All vessel attributions are probabilistic estimates requiring field verification. " +
+  "This report was generated using demonstration data.";
 
 export function generateJsonReport(data: ReportData): string {
   const report = {
-    reportType: "MARIS Investigation Report",
+    reportType: "maris Investigation Report",
     generatedAt: new Date().toISOString(),
     disclaimer: DISCLAIMER,
     incident: data.incident,
@@ -98,7 +98,7 @@ export function generatePdfReport(data: ReportData): jsPDF {
   // Header
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.text("MARIS", margin, y);
+  doc.text("maris", margin, y);
   y += 7;
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");

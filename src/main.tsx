@@ -18,7 +18,7 @@ const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 function RouteLoading() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-      <div className="text-zinc-500 text-sm animate-pulse">Loading MARIS...</div>
+      <div className="text-zinc-500 text-sm animate-pulse">Loading maris...</div>
     </div>
   );
 }
