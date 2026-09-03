@@ -3,10 +3,35 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
+import { viteStaticCopy } from "vite-plugin-static-copy";
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), vlyPlugin(), tailwindcss()],
+  plugins: [
+    react(),
+    vlyPlugin(),
+    tailwindcss(),
+    viteStaticCopy({
+      targets: [
+        {
+          src: "node_modules/cesium/Build/Cesium/Workers",
+          dest: "static/cesium/Workers",
+        },
+        {
+          src: "node_modules/cesium/Build/Cesium/Assets",
+          dest: "static/cesium/Assets",
+        },
+        {
+          src: "node_modules/cesium/Build/Cesium/ThirdParty",
+          dest: "static/cesium/ThirdParty",
+        },
+        {
+          src: "node_modules/cesium/Build/Cesium/Widgets",
+          dest: "static/cesium/Widgets",
+        },
+      ],
+    }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
