@@ -32,7 +32,10 @@ import type {
 } from "@/data/types";
 
 // Configure Cesium ion access token from environment variable
-Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_ACCESS_TOKEN as string;
+const CESIUM_TOKEN = import.meta.env.VITE_CESIUM_ION_ACCESS_TOKEN as string;
+if (CESIUM_TOKEN) {
+  Cesium.Ion.defaultAccessToken = CESIUM_TOKEN;
+}
 
 interface IntelligenceGlobeProps {
   onBack: () => void;
@@ -43,7 +46,7 @@ interface IntelligenceGlobeProps {
 export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const cesiumContainerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
-  const entitiesRef = useRef<Map<string, Cesium.Entity>>(new Map());
+  const overlaysAddedRef = useRef(false);
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [layers, setLayers] = useState<Globe3dLayer[]>([
@@ -59,8 +62,8 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(1);
   const [timeRange, setTimeRange] = useState<"now" | "3h" | "6h" | "12h" | "24h">("now");
-  const [webglError, setWebglError] = useState(false);
-  const [tokenMissing, setTokenMissing] = useState(false);
+  const [viewerReady, setViewerReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const incident = DEMO_INCIDENT;
 
@@ -88,63 +91,22 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const affectedVessels = DEMO_VESSELS.slice(0, 3);
 
   // ── Check for Cesium ion token ────────────────────────────────
-  useEffect(() => {
-    const token = import.meta.env.VITE_CESIUM_ION_ACCESS_TOKEN;
-    if (!token) {
-      setTokenMissing(true);
-      return;
-    }
-
-    // Check WebGL availability
-    const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-    if (!gl) {
-      setWebglError(true);
-      return;
-    }
-  }, []);
-
-  // ── Helper: get layer visibility ───────────────────────────────
-  const isLayerVisible = useCallback(
-    (layerId: Globe3dLayerId) => {
-      return layers.find((l) => l.id === layerId)?.enabled ?? false;
-    },
-    [layers]
-  );
-
-  // ── Helper: show/hide entity by ID prefix ──────────────────────
-  const setEntitiesVisible = useCallback(
-    (prefix: string, visible: boolean) => {
-      const viewer = viewerRef.current;
-      if (!viewer) return;
-      const entities = viewer.entities.values;
-      for (let i = 0; i < entities.length; i++) {
-        const entity = entities[i];
-        if (entity.id && String(entity.id).startsWith(prefix)) {
-          entity.show = visible;
-        }
-      }
-    },
-    []
-  );
+  const hasToken = !!CESIUM_TOKEN;
 
   // ── Initialize CesiumJS Viewer ────────────────────────────────
   useEffect(() => {
     if (!cesiumContainerRef.current || viewerRef.current) return;
-    if (tokenMissing || webglError) return;
+    if (!hasToken) return;
 
     let destroyed = false;
 
-    const initViewer = () => {
+    const initViewer = async () => {
       try {
         const viewer = new Cesium.Viewer(cesiumContainerRef.current!, {
-          // Use Ion-default terrain
-          terrain: Cesium.Terrain.fromWorldTerrain(),
-          // Base imagery — dark Carto basemap
           baseLayer: false,
-          skyAtmosphere: new Cesium.SkyAtmosphere(),
+          skyAtmosphere: new Cesium.SkyAtmosphere() as any,
           skyBox: false,
-          // UI controls — minimal
+          terrain: undefined,
           animation: false,
           timeline: false,
           baseLayerPicker: false,
@@ -156,7 +118,6 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           selectionIndicator: false,
           fullscreenButton: false,
           vrButton: false,
-          // Performance
           requestRenderMode: false,
           maximumRenderTimeChange: Infinity,
           targetFrameRate: 60,
@@ -187,7 +148,6 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
         // Globe styling
         scene.globe.enableLighting = true;
-        scene.globe.depthTestAgainstTerrain = false;
 
         // Add dark Carto basemap imagery
         const CARTO_API_KEY = "cb1_2u58_1_bf57649a9ebd93a4418be433";
@@ -202,10 +162,10 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
         viewerRef.current = viewer;
 
-        // Position camera to oblique view of the Indian Ocean / spill area
+        // Position camera — oblique view of the Indian Ocean / spill area
         const spillLon = incident.polygon.center[1];
         const spillLat = incident.polygon.center[0];
-        viewer.camera.flyTo({
+        viewer.camera.setView({
           destination: Cesium.Cartesian3.fromDegrees(
             spillLon + 3.5,
             spillLat - 2.5,
@@ -216,13 +176,12 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
             pitch: Cesium.Math.toRadians(-42),
             roll: 0,
           },
-          duration: 0,
         });
 
-        // Add all intelligence overlays
-        addAllOverlays();
+        setViewerReady(true);
       } catch (err) {
         console.error("[MARIS] CesiumJS init failed:", err);
+        setInitError(err instanceof Error ? err.message : "Failed to initialize CesiumJS");
       }
     };
 
@@ -234,113 +193,207 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         viewerRef.current.destroy();
         viewerRef.current = null;
       }
-      entitiesRef.current.clear();
+      overlaysAddedRef.current = false;
     };
-  }, [tokenMissing, webglError]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Add all intelligence overlays to the Cesium scene ──────────
-  const addAllOverlays = useCallback(() => {
+  // ── Add intelligence overlays once viewer is ready ─────────────
+  useEffect(() => {
+    if (!viewerReady || !viewerRef.current || overlaysAddedRef.current) return;
+    overlaysAddedRef.current = true;
+
     const viewer = viewerRef.current;
-    if (!viewer) return;
-
     const centerLon = incident.polygon.center[1];
     const centerLat = incident.polygon.center[0];
 
-    // ── OIL SPILL POLYGON ─────────────────────────────────────
-    addOilSpillPolygon(viewer);
+    // ═══════════════════════════════════════════════════════════
+    // OIL SPILL POLYGON
+    // ═══════════════════════════════════════════════════════════
+    const spillCoords = incident.polygon.coordinates;
+    const spillPositions = spillCoords.map((c) =>
+      Cesium.Cartesian3.fromDegrees(c[1], c[0], 10)
+    );
 
-    // ── DETECTION ZONE RING ───────────────────────────────────
-    addDetectionZone(viewer, centerLon, centerLat);
+    // Glow outline
+    viewer.entities.add({
+      id: "spill-glow",
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(spillPositions),
+        material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.08),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.35),
+        outlineWidth: 6,
+        height: 10,
+        extrudedHeight: 10,
+      },
+    });
 
-    // ── AIS VESSEL TRACKS ─────────────────────────────────────
-    addVesselTracks(viewer, null);
+    // Main spill polygon — amber fill
+    viewer.entities.add({
+      id: "spill-main",
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(spillPositions),
+        material: Cesium.Color.fromCssColorString("#d4770a").withAlpha(0.30),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.9),
+        outlineWidth: 2,
+        height: 15,
+        extrudedHeight: 15,
+      },
+    });
 
-    // ── AIS VESSELS ───────────────────────────────────────────
-    addVessels(viewer, null);
-
-    // ── SATELLITE OBSERVATION ─────────────────────────────────
-    addSatelliteObservation(viewer);
-
-    // ── DRIFT PATHS ───────────────────────────────────────────
-    addDriftPaths(viewer);
-
-    // ── MARITIME GRID ─────────────────────────────────────────
-    addMaritimeGrid(viewer);
-  }, [incident]);
-
-  // ── Oil Spill Polygon ──────────────────────────────────────────
-  const addOilSpillPolygon = useCallback(
-    (viewer: Cesium.Viewer) => {
-      const coords = incident.polygon.coordinates;
-      const centerLon = incident.polygon.center[1];
-      const centerLat = incident.polygon.center[0];
-
-      // Convert coordinates: [lat, lon] -> Cesium Cartesian3
-      const positions = coords.map((c) =>
-        Cesium.Cartesian3.fromDegrees(c[1], c[0], 10)
-      );
-
-      // Glow outline — wider, semi-transparent
-      viewer.entities.add({
-        id: "spill-glow",
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(positions),
-          material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.08),
-          outline: true,
-          outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.35),
-          outlineWidth: 6,
-          height: 10,
-          extrudedHeight: 10,
-        },
+    // Inner high-intensity region
+    const innerPositions = spillCoords
+      .slice(0, -1)
+      .map((c) => {
+        const lat = centerLat + (c[0] - centerLat) * 0.5;
+        const lon = centerLon + (c[1] - centerLon) * 0.5;
+        return Cesium.Cartesian3.fromDegrees(lon, lat, 16);
       });
+    innerPositions.push(innerPositions[0]);
 
-      // Main spill polygon — amber fill
-      viewer.entities.add({
-        id: "spill-main",
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(positions),
-          material: Cesium.Color.fromCssColorString("#d4770a").withAlpha(0.30),
-          outline: true,
-          outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.9),
-          outlineWidth: 2,
-          height: 15,
-          extrudedHeight: 15,
-        },
-      });
+    viewer.entities.add({
+      id: "spill-inner",
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(innerPositions),
+        material: Cesium.Color.fromCssColorString("#92400e").withAlpha(0.4),
+        outline: false,
+        height: 18,
+        extrudedHeight: 18,
+      },
+    });
 
-      // Inner high-intensity region — darker amber
-      const innerPositions = coords
-        .slice(0, -1)
-        .map((c) => {
-          const lat = centerLat + (c[0] - centerLat) * 0.5;
-          const lon = centerLon + (c[1] - centerLon) * 0.5;
-          return Cesium.Cartesian3.fromDegrees(lon, lat, 16);
+    // Spill label
+    viewer.entities.add({
+      id: "spill-label",
+      position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat + 0.22, 1200),
+      label: {
+        text: "OIL SPILL DETECTION",
+        font: "bold 12px monospace",
+        fillColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.95),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        scale: 1,
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString("#020508").withAlpha(0.85),
+      },
+    });
+
+    // Spill detail label
+    viewer.entities.add({
+      id: "spill-label-detail",
+      position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat + 0.15, 1200),
+      label: {
+        text: `Area: ${incident.polygon.areaKm2} km\u00B2 | Confidence: ${incident.confidence.score}%`,
+        font: "10px monospace",
+        fillColor: Cesium.Color.fromCssColorString("#c8c8c8").withAlpha(0.8),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 1,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        scale: 1,
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString("#020508").withAlpha(0.8),
+      },
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // DETECTION ZONE RING (15km)
+    // ═══════════════════════════════════════════════════════════
+    const zoneRadiusKm = 15;
+    const zonePoints: Cesium.Cartesian3[] = [];
+    for (let i = 0; i <= 64; i++) {
+      const angle = (i / 64) * Math.PI * 2;
+      const zLat = centerLat + (zoneRadiusKm / 111) * Math.cos(angle);
+      const zLon = centerLon + (zoneRadiusKm / (111 * Math.cos((centerLat * Math.PI) / 180))) * Math.sin(angle);
+      zonePoints.push(Cesium.Cartesian3.fromDegrees(zLon, zLat, 8));
+    }
+    viewer.entities.add({
+      id: "detection-zone",
+      polyline: {
+        positions: zonePoints,
+        width: 1,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.4),
+          dashLength: 16,
+        }),
+        clampToGround: true,
+      },
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // AIS VESSEL TRACKS
+    // ═══════════════════════════════════════════════════════════
+    DEMO_VESSELS.forEach((vessel) => {
+      if (vessel.trajectory.length > 1) {
+        const positions = vessel.trajectory.map((c) =>
+          Cesium.Cartesian3.fromDegrees(c[1], c[0], 5)
+        );
+        viewer.entities.add({
+          id: `track-${vessel.mmsi}`,
+          polyline: {
+            positions,
+            width: 1.5,
+            material: Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.35),
+            clampToGround: true,
+          },
         });
-      innerPositions.push(innerPositions[0]); // close polygon
 
+        // Direction arrow at midpoint
+        if (vessel.trajectory.length >= 2) {
+          const midIdx = Math.floor(vessel.trajectory.length / 2);
+          const mid = vessel.trajectory[midIdx];
+          const prev = vessel.trajectory[midIdx - 1];
+          const ang = Math.atan2(mid[1] - prev[1], mid[0] - prev[0]);
+          const aLen = 0.12;
+          viewer.entities.add({
+            id: `track-arrow-${vessel.mmsi}`,
+            polyline: {
+              positions: [
+                Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 5),
+                Cesium.Cartesian3.fromDegrees(mid[1] + aLen * Math.sin(ang - 0.4), mid[0] + aLen * Math.cos(ang - 0.4), 5),
+                Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 5),
+                Cesium.Cartesian3.fromDegrees(mid[1] + aLen * Math.sin(ang + 0.4), mid[0] + aLen * Math.cos(ang + 0.4), 5),
+              ],
+              width: 1,
+              material: Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.5),
+              clampToGround: true,
+            },
+          });
+        }
+      }
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // AIS VESSELS
+    // ═══════════════════════════════════════════════════════════
+    DEMO_VESSELS.forEach((vessel) => {
+      // Ship billboard
       viewer.entities.add({
-        id: "spill-inner",
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(innerPositions),
-          material: Cesium.Color.fromCssColorString("#92400e").withAlpha(0.4),
-          outline: false,
-          height: 18,
-          extrudedHeight: 18,
+        id: `vessel-${vessel.mmsi}`,
+        name: vessel.name,
+        position: Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 30),
+        billboard: {
+          image: createShipSvg(vessel, false),
+          width: 28,
+          height: 28,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scale: 1,
         },
-      });
-
-      // Spill label — title
-      viewer.entities.add({
-        id: "spill-label",
-        position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat + 0.22, 1200),
         label: {
-          text: "OIL SPILL DETECTION",
-          font: "bold 12px monospace",
-          fillColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.95),
+          text: `${vessel.name}\n${vessel.speed} kn \u2192 ${vessel.heading}\u00B0`,
+          font: "bold 9px monospace",
+          fillColor: Cesium.Color.fromCssColorString("#b4bec8").withAlpha(0.7),
           outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
+          outlineWidth: 1.5,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -22),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           scale: 1,
           showBackground: true,
@@ -348,419 +401,244 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         },
       });
 
-      // Spill label — details
+      // Heading indicator line
+      const hRad = ((vessel.heading - 90) * Math.PI) / 180;
+      const lineLen = 0.08;
       viewer.entities.add({
-        id: "spill-label-detail",
-        position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat + 0.15, 1200),
-        label: {
-          text: `Area: ${incident.polygon.areaKm2} km² | Confidence: ${incident.confidence.score}%`,
-          font: "10px monospace",
-          fillColor: Cesium.Color.fromCssColorString("#c8c8c8").withAlpha(0.8),
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 1,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scale: 1,
-          showBackground: true,
-          backgroundColor: Cesium.Color.fromCssColorString("#020508").withAlpha(0.8),
+        id: `vessel-heading-${vessel.mmsi}`,
+        polyline: {
+          positions: [
+            Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 30),
+            Cesium.Cartesian3.fromDegrees(
+              vessel.lon + lineLen * Math.cos(hRad),
+              vessel.lat + lineLen * Math.sin(hRad),
+              30
+            ),
+          ],
+          width: 1,
+          material: Cesium.Color.fromCssColorString("#55aaff").withAlpha(0.7),
         },
       });
-    },
-    [incident]
-  );
+    });
 
-  // ── Detection Zone Ring ─────────────────────────────────────────
-  const addDetectionZone = useCallback(
-    (viewer: Cesium.Viewer, centerLon: number, centerLat: number) => {
-      const zoneRadiusKm = 15;
-      const points: Cesium.Cartesian3[] = [];
-      for (let i = 0; i <= 64; i++) {
-        const angle = (i / 64) * Math.PI * 2;
-        const lat = centerLat + ((zoneRadiusKm / 111) * Math.cos(angle));
-        const lon = centerLon + ((zoneRadiusKm / (111 * Math.cos((centerLat * Math.PI) / 180))) * Math.sin(angle));
-        points.push(Cesium.Cartesian3.fromDegrees(lon, lat, 8));
-      }
+    // ═══════════════════════════════════════════════════════════
+    // SATELLITE OBSERVATION
+    // ═══════════════════════════════════════════════════════════
+    const obs = DEMO_SATELLITE_OBSERVATION;
 
+    // Ground track
+    if (obs.groundTrack.length > 1) {
+      const trackPositions = obs.groundTrack.map((c) =>
+        Cesium.Cartesian3.fromDegrees(c[1], c[0], 5)
+      );
       viewer.entities.add({
-        id: "detection-zone",
+        id: "sat-ground-track",
         polyline: {
-          positions: points,
-          width: 1,
+          positions: trackPositions,
+          width: 1.5,
           material: new Cesium.PolylineDashMaterialProperty({
-            color: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.4),
+            color: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.5),
             dashLength: 16,
           }),
           clampToGround: true,
         },
       });
-    },
-    []
-  );
+    }
 
-  // ── AIS Vessel Tracks ──────────────────────────────────────────
-  const addVesselTracks = useCallback(
-    (viewer: Cesium.Viewer, currentVessel: AisVessel | null) => {
-      DEMO_VESSELS.forEach((vessel) => {
-        if (vessel.trajectory.length > 1) {
-          const isSelected = currentVessel?.mmsi === vessel.mmsi;
-          const positions = vessel.trajectory.map((c) =>
-            Cesium.Cartesian3.fromDegrees(c[1], c[0], 5)
-          );
+    // Satellite marker in orbit
+    const satLon = obs.swathCenter[1] + 1.5;
+    const satLat = obs.swathCenter[0] + 1.2;
+    const satAlt = obs.orbitAltitude * 1000;
 
-          viewer.entities.add({
-            id: `track-${vessel.mmsi}`,
-            polyline: {
-              positions,
-              width: isSelected ? 2.5 : 1.5,
-              material: isSelected
-                ? Cesium.Color.fromCssColorString("#22d3ee").withAlpha(0.6)
-                : Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.35),
-              clampToGround: true,
-            },
-          });
+    viewer.entities.add({
+      id: "satellite-marker",
+      name: `${obs.satellite} - Pass 08921`,
+      position: Cesium.Cartesian3.fromDegrees(satLon, satLat, satAlt),
+      billboard: {
+        image: createSatelliteSvg(),
+        width: 40,
+        height: 40,
+        verticalOrigin: Cesium.VerticalOrigin.CENTER,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text: `${obs.satellite}\nPASS 08921\n${new Date(obs.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()} ${new Date(obs.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC`,
+        font: "bold 10px monospace",
+        fillColor: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.8),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 1.5,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -28),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString("#020508").withAlpha(0.85),
+      },
+    });
 
-          // Direction arrow at midpoint
-          if (vessel.trajectory.length >= 2) {
-            const midIdx = Math.floor(vessel.trajectory.length / 2);
-            const mid = vessel.trajectory[midIdx];
-            const prev = vessel.trajectory[midIdx - 1];
-            const angle = Math.atan2(mid[1] - prev[1], mid[0] - prev[0]);
-            const arrowLen = 0.12;
+    // Swath footprint
+    const swathHalfW = obs.swathWidth / 2 / 111000;
+    const swathHalfL = obs.swathLength / 2 / 111000;
+    const swathA = ((obs.orbitInclination > 90 ? 170 : 10) * Math.PI) / 180;
+    const cosA = Math.cos(swathA);
+    const sinA = Math.sin(swathA);
+    const scLat = obs.swathCenter[0];
+    const scLon = obs.swathCenter[1];
+    const swathCorners = [
+      [scLon - swathHalfL * sinA - swathHalfW * cosA, scLat - swathHalfL * cosA + swathHalfW * sinA],
+      [scLon - swathHalfL * sinA + swathHalfW * cosA, scLat - swathHalfL * cosA - swathHalfW * sinA],
+      [scLon + swathHalfL * sinA + swathHalfW * cosA, scLat + swathHalfL * cosA - swathHalfW * sinA],
+      [scLon + swathHalfL * sinA - swathHalfW * cosA, scLat + swathHalfL * cosA + swathHalfW * sinA],
+    ];
+    const swathPositions = swathCorners.map((c) => Cesium.Cartesian3.fromDegrees(c[0], c[1], 5));
+    swathPositions.push(swathPositions[0]);
 
-            viewer.entities.add({
-              id: `track-arrow-${vessel.mmsi}`,
-              polyline: {
-                positions: [
-                  Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 5),
-                  Cesium.Cartesian3.fromDegrees(
-                    mid[1] + arrowLen * Math.sin(angle - 0.4),
-                    mid[0] + arrowLen * Math.cos(angle - 0.4),
-                    5
-                  ),
-                  Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 5),
-                  Cesium.Cartesian3.fromDegrees(
-                    mid[1] + arrowLen * Math.sin(angle + 0.4),
-                    mid[0] + arrowLen * Math.cos(angle + 0.4),
-                    5
-                  ),
-                ],
-                width: 1,
-                material: Cesium.Color.fromCssColorString(
-                  isSelected ? "#22d3ee" : "#3388cc"
-                ).withAlpha(0.5),
-                clampToGround: true,
-              },
-            });
-          }
-        }
+    viewer.entities.add({
+      id: "sat-swath",
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(swathPositions),
+        material: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.04),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.2),
+        outlineWidth: 1,
+        height: 5,
+      },
+    });
+
+    // Connection line from satellite to spill
+    viewer.entities.add({
+      id: "sat-connection",
+      polyline: {
+        positions: [
+          Cesium.Cartesian3.fromDegrees(satLon, satLat, satAlt),
+          Cesium.Cartesian3.fromDegrees(scLon, scLat, 15),
+        ],
+        width: 1,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.25),
+          dashLength: 8,
+        }),
+      },
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // DRIFT PATHS
+    // ═══════════════════════════════════════════════════════════
+    if (DEMO_DRIFT.forward.length > 1) {
+      const fwdPositions = DEMO_DRIFT.forward.map((p) =>
+        Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0], 8)
+      );
+      viewer.entities.add({
+        id: "drift-forward",
+        polyline: {
+          positions: fwdPositions,
+          width: 2,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.5),
+            dashLength: 16,
+          }),
+          clampToGround: true,
+        },
       });
-    },
-    []
-  );
 
-  // ── AIS Vessels ────────────────────────────────────────────────
-  const addVessels = useCallback(
-    (viewer: Cesium.Viewer, currentVessel: AisVessel | null) => {
-      DEMO_VESSELS.forEach((vessel) => {
-        const isSelected = currentVessel?.mmsi === vessel.mmsi;
-
-        // Ship marker (billboard)
+      // Time labels + polygons
+      DEMO_DRIFT.forward.forEach((point, i) => {
+        if (i === 0) return;
         viewer.entities.add({
-          id: `vessel-${vessel.mmsi}`,
-          name: vessel.name,
-          position: Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 30),
-          billboard: {
-            image: createShipSvg(vessel, isSelected),
-            width: isSelected ? 36 : 28,
-            height: isSelected ? 36 : 28,
-            verticalOrigin: Cesium.VerticalOrigin.CENTER,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            scale: 1,
-          },
+          id: `drift-label-${i}`,
+          position: Cesium.Cartesian3.fromDegrees(point.center[1], point.center[0], 100),
           label: {
-            text: `${vessel.name}\n${vessel.speed} kn → ${vessel.heading}°`,
-            font: "bold 9px monospace",
-            fillColor: isSelected
-              ? Cesium.Color.fromCssColorString("#22d3ee").withAlpha(0.95)
-              : Cesium.Color.fromCssColorString("#b4be c8").withAlpha(0.7),
+            text: point.time,
+            font: "8px monospace",
+            fillColor: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.6 + (4 - i) * 0.08),
             outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 1.5,
+            outlineWidth: 1,
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            pixelOffset: new Cesium.Cartesian2(0, -22),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             scale: 1,
-            showBackground: true,
-            backgroundColor: Cesium.Color.fromCssColorString("#020508").withAlpha(0.85),
           },
         });
 
-        // Heading indicator line
-        const headingRad = ((vessel.heading - 90) * Math.PI) / 180;
-        const lineLen = 0.08;
-        viewer.entities.add({
-          id: `vessel-heading-${vessel.mmsi}`,
-          polyline: {
-            positions: [
-              Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 30),
-              Cesium.Cartesian3.fromDegrees(
-                vessel.lon + lineLen * Math.cos(headingRad),
-                vessel.lat + lineLen * Math.sin(headingRad),
-                30
-              ),
-            ],
-            width: isSelected ? 2 : 1,
-            material: Cesium.Color.fromCssColorString(
-              isSelected ? "#22d3ee" : "#55aaff"
-            ).withAlpha(0.7),
-          },
-        });
-      });
-    },
-    []
-  );
-
-  // ── Satellite Observation ───────────────────────────────────────
-  const addSatelliteObservation = useCallback(
-    (viewer: Cesium.Viewer) => {
-      const obs = DEMO_SATELLITE_OBSERVATION;
-
-      // Ground track
-      if (obs.groundTrack.length > 1) {
-        const trackPositions = obs.groundTrack.map((c) =>
-          Cesium.Cartesian3.fromDegrees(c[1], c[0], 5)
+        const polyPos = point.polygon.map((c) =>
+          Cesium.Cartesian3.fromDegrees(c[1], c[0], 8 + i * 2)
         );
-
         viewer.entities.add({
-          id: "sat-ground-track",
-          polyline: {
-            positions: trackPositions,
-            width: 1.5,
-            material: new Cesium.PolylineDashMaterialProperty({
-              color: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.5),
-              dashLength: 16,
-            }),
-            clampToGround: true,
+          id: `drift-polygon-${i}`,
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(polyPos),
+            material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.03 * (5 - i)),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.15 * (5 - i)),
+            outlineWidth: 1,
+            height: 8 + i * 2,
           },
         });
-      }
-
-      // Satellite position marker (in orbit)
-      const satLon = obs.swathCenter[1] + 1.5;
-      const satLat = obs.swathCenter[0] + 1.2;
-      const satAlt = obs.orbitAltitude * 1000;
-
-      viewer.entities.add({
-        id: "satellite-marker",
-        name: `${obs.satellite} — Pass 08921`,
-        position: Cesium.Cartesian3.fromDegrees(satLon, satLat, satAlt),
-        billboard: {
-          image: createSatelliteSvg(),
-          width: 40,
-          height: 40,
-          verticalOrigin: Cesium.VerticalOrigin.CENTER,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: `${obs.satellite}\nPASS 08921\n${new Date(obs.timestamp)
-            .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-            .toUpperCase()} ${new Date(obs.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC`,
-          font: "bold 10px monospace",
-          fillColor: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.8),
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 1.5,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -28),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          showBackground: true,
-          backgroundColor: Cesium.Color.fromCssColorString("#020508").withAlpha(0.85),
-        },
       });
+    }
 
-      // Swath footprint
-      const swathHalfWidth = obs.swathWidth / 2 / 111000;
-      const swathHalfLength = obs.swathLength / 2 / 111000;
-      const swathAngle = ((obs.orbitInclination > 90 ? 170 : 10) * Math.PI) / 180;
-      const cosA = Math.cos(swathAngle);
-      const sinA = Math.sin(swathAngle);
-      const scLat = obs.swathCenter[0];
-      const scLon = obs.swathCenter[1];
-
-      const swathCorners = [
-        [scLon - swathHalfLength * sinA - swathHalfWidth * cosA, scLat - swathHalfLength * cosA + swathHalfWidth * sinA],
-        [scLon - swathHalfLength * sinA + swathHalfWidth * cosA, scLat - swathHalfLength * cosA - swathHalfWidth * sinA],
-        [scLon + swathHalfLength * sinA + swathHalfWidth * cosA, scLat + swathHalfLength * cosA - swathHalfWidth * sinA],
-        [scLon + swathHalfLength * sinA - swathHalfWidth * cosA, scLat + swathHalfLength * cosA + swathHalfWidth * sinA],
-      ];
-
-      const swathPositions = swathCorners.map((c) =>
-        Cesium.Cartesian3.fromDegrees(c[0], c[1], 5)
+    if (DEMO_DRIFT.backtrack.length > 1) {
+      const btPositions = DEMO_DRIFT.backtrack.map((p) =>
+        Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0], 8)
       );
-      swathPositions.push(swathPositions[0]); // close polygon
-
       viewer.entities.add({
-        id: "sat-swath",
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(swathPositions),
-          material: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.04),
-          outline: true,
-          outlineColor: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.2),
-          outlineWidth: 1,
-          height: 5,
-        },
-      });
-
-      // Connection line from satellite to spill center
-      viewer.entities.add({
-        id: "sat-connection",
+        id: "drift-backtrack",
         polyline: {
-          positions: [
-            Cesium.Cartesian3.fromDegrees(satLon, satLat, satAlt),
-            Cesium.Cartesian3.fromDegrees(scLon, scLat, 15),
-          ],
-          width: 1,
+          positions: btPositions,
+          width: 1.5,
           material: new Cesium.PolylineDashMaterialProperty({
-            color: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.25),
-            dashLength: 8,
+            color: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.4),
+            dashLength: 12,
           }),
+          clampToGround: true,
         },
       });
-    },
-    []
-  );
+    }
 
-  // ── Drift Paths ────────────────────────────────────────────────
-  const addDriftPaths = useCallback(
-    (viewer: Cesium.Viewer) => {
-      // Forward drift
-      if (DEMO_DRIFT.forward.length > 1) {
-        const fwdPositions = DEMO_DRIFT.forward.map((p) =>
-          Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0], 8)
-        );
-
-        viewer.entities.add({
-          id: "drift-forward",
-          polyline: {
-            positions: fwdPositions,
-            width: 2,
-            material: new Cesium.PolylineDashMaterialProperty({
-              color: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.5),
-              dashLength: 16,
-            }),
-            clampToGround: true,
-          },
-        });
-
-        // Time labels
-        DEMO_DRIFT.forward.forEach((point, i) => {
-          if (i === 0) return;
-          viewer.entities.add({
-            id: `drift-label-${i}`,
-            position: Cesium.Cartesian3.fromDegrees(point.center[1], point.center[0], 100),
-            label: {
-              text: point.time,
-              font: "8px monospace",
-              fillColor: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.6 + (4 - i) * 0.08),
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 1,
-              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-              scale: 1,
-            },
-          });
-        });
-
-        // Forward polygons (semi-transparent for each time step)
-        DEMO_DRIFT.forward.forEach((point, i) => {
-          if (i === 0) return;
-          const polyPositions = point.polygon.map((c) =>
-            Cesium.Cartesian3.fromDegrees(c[1], c[0], 8 + i * 2)
-          );
-          viewer.entities.add({
-            id: `drift-polygon-${i}`,
-            polygon: {
-              hierarchy: new Cesium.PolygonHierarchy(polyPositions),
-              material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.03 * (5 - i)),
-              outline: true,
-              outlineColor: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.15 * (5 - i)),
-              outlineWidth: 1,
-              height: 8 + i * 2,
-            },
-          });
-        });
-      }
-
-      // Backtrack
-      if (DEMO_DRIFT.backtrack.length > 1) {
-        const btPositions = DEMO_DRIFT.backtrack.map((p) =>
-          Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0], 8)
-        );
-
-        viewer.entities.add({
-          id: "drift-backtrack",
-          polyline: {
-            positions: btPositions,
-            width: 1.5,
-            material: new Cesium.PolylineDashMaterialProperty({
-              color: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.4),
-              dashLength: 12,
-            }),
-            clampToGround: true,
-          },
-        });
-      }
-    },
-    []
-  );
-
-  // ── Maritime Grid ──────────────────────────────────────────────
-  const addMaritimeGrid = useCallback(
-    (viewer: Cesium.Viewer) => {
-      const gridLines: { id: string; positions: Cesium.Cartesian3[] }[] = [];
-
-      // Latitude lines
-      for (let lat = 5; lat <= 20; lat += 5) {
-        const positions: Cesium.Cartesian3[] = [];
-        for (let lon = 80; lon <= 95; lon += 0.5) {
-          positions.push(Cesium.Cartesian3.fromDegrees(lon, lat, 3));
-        }
-        gridLines.push({ id: `grid-lat-${lat}`, positions });
-      }
-
-      // Longitude lines
-      for (let lon = 81; lon <= 93; lon += 3) {
-        const positions: Cesium.Cartesian3[] = [];
-        for (let lat = 5; lat <= 20; lat += 0.5) {
-          positions.push(Cesium.Cartesian3.fromDegrees(lon, lat, 3));
-        }
-        gridLines.push({ id: `grid-lon-${lon}`, positions });
-      }
-
-      gridLines.forEach(({ id, positions }) => {
-        viewer.entities.add({
-          id,
-          polyline: {
-            positions,
-            width: 0.5,
-            material: Cesium.Color.fromCssColorString("#334155").withAlpha(0.25),
-          },
-        });
+    // ═══════════════════════════════════════════════════════════
+    // MARITIME GRID
+    // ═══════════════════════════════════════════════════════════
+    for (let lat = 5; lat <= 20; lat += 5) {
+      const pts: Cesium.Cartesian3[] = [];
+      for (let lon = 80; lon <= 95; lon += 0.5) pts.push(Cesium.Cartesian3.fromDegrees(lon, lat, 3));
+      viewer.entities.add({
+        id: `grid-lat-${lat}`,
+        polyline: { positions: pts, width: 0.5, material: Cesium.Color.fromCssColorString("#334155").withAlpha(0.25) },
       });
-    },
-    []
-  );
+    }
+    for (let lon = 81; lon <= 93; lon += 3) {
+      const pts: Cesium.Cartesian3[] = [];
+      for (let lat = 5; lat <= 20; lat += 0.5) pts.push(Cesium.Cartesian3.fromDegrees(lon, lat, 3));
+      viewer.entities.add({
+        id: `grid-lon-${lon}`,
+        polyline: { positions: pts, width: 0.5, material: Cesium.Color.fromCssColorString("#334155").withAlpha(0.25) },
+      });
+    }
+  }, [viewerReady, incident]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Update graphics when layers/selection change ────────────────
-  useEffect(() => {
+  // ── Layer toggle visibility ────────────────────────────────────
+  const setEntitiesVisible = useCallback((prefix: string, visible: boolean) => {
     const viewer = viewerRef.current;
     if (!viewer) return;
+    const entities = viewer.entities.values;
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i];
+      if (entity.id && String(entity.id).startsWith(prefix)) {
+        entity.show = visible;
+      }
+    }
+  }, []);
 
-    // Toggle entity visibility by layer
+  const isLayerVisible = useCallback((layerId: Globe3dLayerId) => {
+    return layers.find((l) => l.id === layerId)?.enabled ?? false;
+  }, [layers]);
+
+  useEffect(() => {
+    if (!viewerRef.current) return;
     setEntitiesVisible("vessel-", isLayerVisible("globe_vessels"));
+    setEntitiesVisible("vessel-heading-", isLayerVisible("globe_vessels"));
     setEntitiesVisible("track-", isLayerVisible("globe_tracks"));
+    setEntitiesVisible("track-arrow-", isLayerVisible("globe_tracks"));
     setEntitiesVisible("spill-", isLayerVisible("globe_spill"));
     setEntitiesVisible("drift-", isLayerVisible("globe_spill"));
     setEntitiesVisible("sat-", isLayerVisible("globe_satellite"));
@@ -769,35 +647,61 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     setEntitiesVisible("grid-", isLayerVisible("globe_grid"));
   }, [layers, setEntitiesVisible, isLayerVisible]);
 
-  // ── Handle vessel selection ─────────────────────────────────────
-  const handleVesselSelect = useCallback(
-    (vessel: AisVessel) => {
-      setSelectedVessel(vessel);
-      const viewer = viewerRef.current;
-      if (!viewer) return;
+  // ── Vessel selection + camera fly ──────────────────────────────
+  const handleVesselSelect = useCallback((vessel: AisVessel) => {
+    setSelectedVessel(vessel);
+    const viewer = viewerRef.current;
+    if (!viewer) return;        // Update vessel billboards
+        viewer.entities.values.forEach((entity: any) => {
+          if (entity.id && String(entity.id).startsWith("vessel-") && !String(entity.id).startsWith("vessel-heading-")) {
+            const mmsi = String(entity.id).replace("vessel-", "");
+            const isSelected = mmsi === vessel.mmsi;
+            if (entity.billboard) {
+              entity.billboard.image = createShipSvg(
+                DEMO_VESSELS.find((v) => v.mmsi === mmsi)!,
+                isSelected
+              );
+              entity.billboard.width = isSelected ? 36 : 28;
+              entity.billboard.height = isSelected ? 36 : 28;
+            }
+            if (entity.label) {
+              entity.label.fillColor = isSelected
+                ? Cesium.Color.fromCssColorString("#22d3ee").withAlpha(0.95)
+                : Cesium.Color.fromCssColorString("#b4bec8").withAlpha(0.7);
+            }
+            if (entity.polyline) {
+              entity.polyline.material = Cesium.Color.fromCssColorString(isSelected ? "#22d3ee" : "#55aaff").withAlpha(0.7);
+              entity.polyline.width = isSelected ? 2 : 1;
+            }
+          }
+          // Highlight selected vessel track
+          if (entity.id && String(entity.id).startsWith("track-") && !String(entity.id).startsWith("track-arrow-")) {
+            const mmsi = String(entity.id).replace("track-", "");
+            const isSelected = mmsi === vessel.mmsi;
+            if (entity.polyline) {
+              entity.polyline.material = isSelected
+                ? Cesium.Color.fromCssColorString("#22d3ee").withAlpha(0.6)
+                : Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.35);
+              entity.polyline.width = isSelected ? 2.5 : 1.5;
+            }
+          }
+        });
 
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(
-          vessel.lon + 0.5,
-          vessel.lat - 0.3,
-          600000
-        ),
-        orientation: {
-          heading: Cesium.Math.toRadians(350),
-          pitch: Cesium.Math.toRadians(-45),
-          roll: 0,
-        },
-        duration: 2,
-      });
-    },
-    []
-  );
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(vessel.lon + 0.5, vessel.lat - 0.3, 600000),
+      orientation: {
+        heading: Cesium.Math.toRadians(350),
+        pitch: Cesium.Math.toRadians(-45),
+        roll: 0,
+      },
+      duration: 2,
+    });
+  }, []);
 
   // ── Fly to spill ────────────────────────────────────────────────
   const flyToSpill = useCallback(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;
-
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(
         incident.polygon.center[1] + 3.5,
@@ -823,53 +727,46 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     if (!isPlaying) return;
     const iv = setInterval(() => {
       setTimeStep((p) => {
-        if (p >= timeSteps.length - 1) {
-          setIsPlaying(false);
-          return p;
-        }
+        if (p >= timeSteps.length - 1) { setIsPlaying(false); return p; }
         return p + 1;
       });
     }, 1000 / playSpeed);
     return () => clearInterval(iv);
   }, [isPlaying, playSpeed, timeSteps.length]);
 
-  // ── Error / missing token screen ────────────────────────────────
-  if (tokenMissing) {
+  // ── Missing token screen ────────────────────────────────────────
+  if (!hasToken) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-zinc-950 text-zinc-100">
-        <div className="text-center max-w-md">
+        <div className="text-center max-w-md p-8">
+          <div className="flex justify-center mb-4">
+            <div className="flex size-16 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-500/10">
+              <Navigation className="size-8 text-cyan-400" />
+            </div>
+          </div>
           <p className="text-sm font-semibold text-zinc-200 mb-2">
             Cesium ion Access Token Not Configured
           </p>
-          <p className="text-[11px] text-zinc-500 mb-4">
-            Add <code className="text-cyan-400">VITE_CESIUM_ION_ACCESS_TOKEN</code> to your{" "}
-            <code className="text-cyan-400">.env.local</code> file.
+          <p className="text-[11px] text-zinc-500 mb-4 leading-relaxed">
+            Add <code className="text-cyan-400 bg-zinc-800 px-1.5 py-0.5 rounded">VITE_CESIUM_ION_ACCESS_TOKEN</code> to the
+            Keys / API keys tab with your Cesium ion token.
           </p>
-          <button
-            onClick={onBack}
-            className="text-[10px] text-zinc-400 hover:text-zinc-200 underline"
-          >
-            ← Back to Dashboard
+          <button onClick={onBack} className="text-[10px] text-zinc-400 hover:text-zinc-200 underline">
+            &larr; Back to Dashboard
           </button>
         </div>
       </div>
     );
   }
 
-  if (webglError) {
+  if (initError) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-zinc-950 text-zinc-100">
-        <div className="text-center max-w-md">
-          <p className="text-sm font-semibold text-zinc-200 mb-2">WebGL Not Available</p>
-          <p className="text-[11px] text-zinc-500 mb-4">
-            3D Intelligence requires WebGL to render the 3D globe. Please enable WebGL or use a
-            compatible browser.
-          </p>
-          <button
-            onClick={onBack}
-            className="text-[10px] text-zinc-400 hover:text-zinc-200 underline"
-          >
-            ← Back to Dashboard
+        <div className="text-center max-w-md p-8">
+          <p className="text-sm font-semibold text-zinc-200 mb-2">3D Globe Initialization Failed</p>
+          <p className="text-[11px] text-zinc-500 mb-4 break-words">{initError}</p>
+          <button onClick={onBack} className="text-[10px] text-zinc-400 hover:text-zinc-200 underline">
+            &larr; Back to Dashboard
           </button>
         </div>
       </div>
@@ -942,7 +839,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
                   </div>
                   <div className="text-[8px] text-zinc-500 font-mono mb-0.5">MMSI {v.mmsi}</div>
                   <div className="flex items-center gap-3 text-[9px] text-zinc-400">
-                    <span>{v.speed} kn</span><span>→ {v.heading}°</span>
+                    <span>{v.speed} kn</span><span>&rarr; {v.heading}&deg;</span>
                   </div>
                   {attr && <div className="mt-1 text-[8px] font-bold text-orange-400">Source: {attr.overallScore}/100</div>}
                 </button>
@@ -957,7 +854,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
             <div className="space-y-1">
               {layers.map((l) => (
                 <button key={l.id} onClick={() => toggleLayer(l.id)} className="flex items-center gap-2 w-full text-left">
-                  <div className="text-[8px] text-zinc-600">✦</div>
+                  <div className="text-[8px] text-zinc-600">&bull;</div>
                   <span className="text-[10px] text-zinc-400 flex-1">{l.label}</span>
                   <div className={cn("w-7 h-3.5 rounded-full transition-colors relative", l.enabled ? "bg-cyan-500/30" : "bg-zinc-700/50")}>
                     <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all", l.enabled ? "left-3.5 bg-cyan-400" : "left-0.5 bg-zinc-500")} />
@@ -971,6 +868,19 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         {/* ─── CESIUM 3D GLOBE ──────────────────────────────── */}
         <main className="flex-1 relative">
           <div ref={cesiumContainerRef} className="absolute inset-0 cesium-container" />
+
+          {/* Loading overlay */}
+          {!viewerReady && !initError && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#020508]">
+              <div className="text-center">
+                <div className="flex justify-center mb-3">
+                  <div className="size-10 rounded-full border-2 border-cyan-500/30 border-t-cyan-500 animate-spin" />
+                </div>
+                <div className="text-[11px] text-zinc-300 font-medium">Initializing 3D Intelligence Globe...</div>
+                <div className="text-[9px] text-zinc-600 mt-1">Loading CesiumJS + ion terrain</div>
+              </div>
+            </div>
+          )}
 
           {/* Compass / nav overlay */}
           <div className="absolute bottom-20 left-6 z-10">
@@ -1030,13 +940,12 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
             </div>
             <div className="space-y-2.5">
               <EvtField label="DETECTED" value={new Date(incident.detectedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " UTC"} />
-              <EvtField label="LOCATION" value={`${incident.coordinates[0].toFixed(2)}° N, ${incident.coordinates[1].toFixed(2)}° E`} />
-              <EvtField label="AREA" value={`${incident.polygon.areaKm2} km²`} />
+              <EvtField label="LOCATION" value={`${incident.coordinates[0].toFixed(2)}\u00B0 N, ${incident.coordinates[1].toFixed(2)}\u00B0 E`} />
+              <EvtField label="AREA" value={`${incident.polygon.areaKm2} km\u00B2`} />
               <EvtField label="CONFIDENCE" value={`${incident.confidence.score}%`} color="text-cyan-400" />
               <EvtField label="SOURCE" value="Sentinel-1A (SAR)" />
             </div>
 
-            {/* Event Timeline */}
             <div>
               <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Event Timeline</h3>
               <div className="space-y-1.5">
@@ -1049,7 +958,6 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
               </div>
             </div>
 
-            {/* Affected Vessels */}
             <div>
               <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Affected Vessels</h3>
               <div className="space-y-2">
@@ -1058,27 +966,25 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
                     <Ship className="size-3 text-zinc-600 mt-0.5 shrink-0" />
                     <div>
                       <div className="text-[10px] font-semibold text-zinc-300">{v.name}</div>
-                      <div className="text-[9px] text-zinc-500">{v.speed} kn → {v.heading}° · {(6 + i * 2.5).toFixed(1)} nm</div>
+                      <div className="text-[9px] text-zinc-500">{v.speed} kn &rarr; {v.heading}&deg; &middot; {(6 + i * 2.5).toFixed(1)} nm</div>
                     </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Confidence Factors */}
             <div>
               <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Confidence Factors</h3>
               <div className="space-y-1">
                 {incident.confidence.factors.slice(0, 3).map((f, i) => (
                   <div key={i} className="flex items-start gap-1.5">
-                    <span className="text-emerald-500 text-[8px] mt-px">•</span>
+                    <span className="text-emerald-500 text-[8px] mt-px">&bull;</span>
                     <span className="text-[9px] text-zinc-400 leading-tight">{f}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Top Source Attribution */}
             {DEMO_ATTRIBUTIONS.length > 0 && (
               <div className="rounded border border-zinc-800/60 bg-zinc-900/30 p-2.5">
                 <h3 className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider mb-1.5">Probable Source</h3>
@@ -1097,10 +1003,9 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
             <button className="w-full rounded border border-zinc-700 bg-zinc-800/30 py-2 text-[10px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors uppercase tracking-wider">View Full Report</button>
 
-            {/* Demo disclaimer */}
             <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2">
               <div className="text-[8px] text-amber-400/70 leading-relaxed">
-                Demonstration data — vessel identities, detection results, and environmental conditions are synthetic. Not derived from live satellite or AIS feeds.
+                Demonstration data &mdash; vessel identities, detection results, and environmental conditions are synthetic. Not derived from live satellite or AIS feeds.
               </div>
             </div>
           </div>

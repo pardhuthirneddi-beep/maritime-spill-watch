@@ -16,16 +16,6 @@ export default defineConfig({
     sourcemap: false,
     target: "esnext",
     chunkSizeWarningLimit: 2000,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          cesium: ["cesium"],
-        },
-      },
-    },
-  },
-  optimizeDeps: {
-    exclude: ["cesium"],
   },
 
   server: {
