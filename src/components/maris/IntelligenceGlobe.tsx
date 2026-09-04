@@ -70,7 +70,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const layerGroupsRef = useRef<Map<string, L.LayerGroup>>(new Map());
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [vesselFilter, setVesselFilter] = useState<"all" | "near">("all");
+  const [vesselFilter, setVesselFilter] = useState<"all">("all");
   const [layers, setLayers] = useState<Globe3dLayer[]>([
     { id: "globe_vessels", label: "Vessels", enabled: true },
     { id: "globe_tracks", label: "Vessel Tracks", enabled: true },
@@ -101,10 +101,6 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       if (!v.name.toLowerCase().includes(q) && !v.mmsi.includes(q)) return false;
-    }
-    if (vesselFilter === "near") {
-      const d = Math.sqrt((v.lat - incident.polygon.center[0]) ** 2 + (v.lon - incident.polygon.center[1]) ** 2);
-      return d < 0.05;
     }
     return true;
   });
@@ -497,7 +493,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
               </div>
             </div>
             <div className="flex items-center gap-1 px-3 py-1.5 border-b border-zinc-800/50">
-              {([["all", `ALL ${DEMO_VESSELS.length}`], ["near", "NEAR SPILL"]] as const).map(([k, l]) => (
+              {([["all", `ALL ${DEMO_VESSELS.length}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setVesselFilter(k)} className={cn("text-[8px] px-2 py-0.5 rounded transition-colors", vesselFilter === k ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300")}>{l}</button>
               ))}
             </div>
