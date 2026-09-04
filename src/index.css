@@ -200,3 +200,49 @@
 .leaflet-control-zoom {
   display: none !important;
 }
+
+/* Cesium 3D Globe overrides */
+.cesium-container {
+  width: 100%;
+  height: 100%;
+}
+
+.cesium-viewer {
+  background: #020508 !important;
+}
+
+.cesium-viewer .cesium-widget-credits {
+  display: none !important;
+}
+
+.cesium-viewer-bottom {
+  display: none !important;
+}
+
+.cesium-viewer .cesium-viewer-toolbar {
+  display: none !important;
+}
+
+.cesium-viewer .cesium-viewer-animationContainer {
+  display: none !important;
+}
+
+.cesium-viewer .cesium-viewer-timelineContainer {
+  display: none !important;
+}
+
+.cesium-viewer .cesium-viewer-fullscreenContainer {
+  display: none !important;
+}
+
+.cesium-viewer .cesium-viewer-vrContainer {
+  display: none !important;
+}
+
+.cesium-viewer .cesium-viewer-infoBoxContainer {
+  display: none !important;
+}
+
+.cesium-viewer .cesium-viewer-selectionIndicator {
+  display: none !important;
+}
