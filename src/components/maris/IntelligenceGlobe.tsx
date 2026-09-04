@@ -1,11 +1,20 @@
 // maris — 3D Geospatial Intelligence Globe
 // Professional maritime satellite intelligence command center
-// Uses MapLibre GL JS (globe projection) + deck.gl overlays
+// Uses ArcGIS Maps SDK for JavaScript — SceneView (3D globe)
 import { useRef, useEffect, useState, useCallback } from "react";
-import * as maplibregl from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
-import { MapboxOverlay } from "@deck.gl/mapbox";
-import { PolygonLayer, PathLayer, ScatterplotLayer, IconLayer, TextLayer } from "@deck.gl/layers";
+import config from "@arcgis/core/config.js";
+import Map from "@arcgis/core/Map.js";
+import SceneView from "@arcgis/core/views/SceneView.js";
+import GraphicsLayer from "@arcgis/core/layers/GraphicsLayer.js";
+import Graphic from "@arcgis/core/Graphic.js";
+import Polygon from "@arcgis/core/geometry/Polygon.js";
+import Polyline from "@arcgis/core/geometry/Polyline.js";
+import Point from "@arcgis/core/geometry/Point.js";
+import SimpleFillSymbol from "@arcgis/core/symbols/SimpleFillSymbol.js";
+import SimpleLineSymbol from "@arcgis/core/symbols/SimpleLineSymbol.js";
+import PictureMarkerSymbol from "@arcgis/core/symbols/PictureMarkerSymbol.js";
+import TextSymbol from "@arcgis/core/symbols/TextSymbol.js";
+import "@arcgis/core/assets/esri/themes/dark/main.css";
 import {
   ArrowLeft,
   ChevronRight,
@@ -32,40 +41,26 @@ import type {
   AisVessel,
   Globe3dLayer,
   Globe3dLayerId,
-  LatLon,
 } from "@/data/types";
 
+// Set ArcGIS assets path for the CSS/icons
+config.assetsPath = "https://js.arcgis.com/5.1/assets/@arcgis/core/assets";
+
 const CARTO_API_KEY = "cb1_2u58_1_bf57649a9ebd93a4418be433";
+
+// ArcGIS dark basemap tile URL
+const DARK_BASEMAP_URL = `https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json?key=${CARTO_API_KEY}`;
 
 interface IntelligenceGlobeProps {
   onBack: () => void;
 }
 
-// Ship icon as SVG data URI for deck.gl
-const SHIP_ICON =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><polygon points="16,2 10,14 22,14" fill="#55aaff" stroke="#fff" stroke-width="1.5" opacity="0.95"/><rect x="13" y="14" width="6" height="6" rx="1" fill="#3388cc" stroke="#fff" stroke-width="1"/></svg>`
-  );
-
-const SHIP_SELECTED_ICON =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/><polygon points="18,3 11,15 25,15" fill="#22d3ee" stroke="#fff" stroke-width="1.5"/><rect x="14" y="15" width="8" height="7" rx="1" fill="#0e7490" stroke="#fff" stroke-width="1"/></svg>`
-  );
-
-const SATELLITE_ICON =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><rect x="4" y="10" width="8" height="3" fill="#44cc88" opacity="0.8"/><rect x="16" y="10" width="8" height="3" fill="#44cc88" opacity="0.8"/><rect x="12" y="10" width="4" height="8" rx="1" fill="#22c55e"/><line x1="14" y1="20" x2="14" y2="26" stroke="#44cc88" stroke-width="1" stroke-dasharray="2,2" opacity="0.5"/></svg>`
-  );
-
 // ─── MAIN COMPONENT ─────────────────────────────────────────────────
 
 export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const overlayRef = useRef<MapboxOverlay | null>(null);
+  const viewContainerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<SceneView | null>(null);
+  const graphicsLayerRef = useRef<GraphicsLayer | null>(null);
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [layers, setLayers] = useState<Globe3dLayer[]>([
@@ -107,426 +102,484 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
   const affectedVessels = DEMO_VESSELS.slice(0, 3);
 
-  // ── Build deck.gl layers ──────────────────────────────────────
-  const buildDeckLayers = useCallback(() => {
-    const deckLayers: unknown[] = [];
-    const enabledMap = Object.fromEntries(layers.map((l) => [l.id, l.enabled]));
-    const centerLon = incident.polygon.center[1];
-    const centerLat = incident.polygon.center[0];
+  // ── Helper: create ship SVG marker ─────────────────────────────
+  const shipSvg = (color: string, selected: boolean) => {
+    const size = selected ? 36 : 28;
+    const stroke = selected ? "#22d3ee" : "#fff";
+    const fill = selected ? "#22d3ee" : color;
+    const bg = selected ? "#0e7490" : "#3388cc";
+    const sw = selected ? "1.5" : "1";
+    return `data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><polygon points="16,2 10,14 22,14" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" opacity="0.95"/><rect x="13" y="14" width="6" height="6" rx="1" fill="${bg}" stroke="${stroke}" stroke-width="${sw}"/></svg>`
+    )}`;
+  };
 
-    // Oil spill polygon
-    if (enabledMap.globe_spill) {
-      const spillCoords = incident.polygon.coordinates.map((c) => [c[1], c[0]] as [number, number]);
-      deckLayers.push(
-        new PolygonLayer({
-          id: "spill-glow",
-          data: [{ polygon: spillCoords }],
-          getPolygon: (d: { polygon: [number, number][] }) => d.polygon,
-          getFillColor: [249, 115, 22, 15],
-          getLineColor: [251, 146, 60, 100],
-          lineWidthMinPixels: 4,
-          lineWidthMaxPixels: 8,
-          pickable: false,
-        }),
-        new PolygonLayer({
-          id: "spill-fill",
-          data: [{ polygon: spillCoords }],
-          getPolygon: (d: { polygon: [number, number][] }) => d.polygon,
-          getFillColor: [212, 119, 10, 55],
-          getLineColor: [251, 146, 60, 200],
-          lineWidthMinPixels: 2,
-          lineWidthMaxPixels: 3,
-          pickable: true,
-        })
-      );
+  // ── Initialize ArcGIS SceneView ───────────────────────────────
+  useEffect(() => {
+    if (!viewContainerRef.current || viewRef.current) return;
 
-      // Spill center label
-      deckLayers.push(
-        new TextLayer({
-          id: "spill-label",
-          data: [{ position: [centerLon, centerLat], text: "OIL SPILL DETECTION" }],
-          getPosition: (d: { position: [number, number] }) => d.position,
-          getText: (d: { text: string }) => d.text,
-          getSize: 11,
-          getColor: [251, 146, 60, 220],
-          fontFamily: "monospace",
-          fontWeight: "bold",
-          getTextAnchor: "middle",
-          getAlignmentBaseline: "bottom" as const,
-          sizeUnits: "pixels" as const,
-          billboard: true,
-          getPixelOffset: [0, -20],
-        }),
-        new TextLayer({
-          id: "spill-label-sub",
-          data: [
-            {
-              position: [centerLon, centerLat],
-              text: `Area: ${incident.polygon.areaKm2} km² | Confidence: ${incident.confidence.score}%`,
-            },
-          ],
-          getPosition: (d: { position: [number, number] }) => d.position,
-          getText: (d: { text: string }) => d.text,
-          getSize: 9,
-          getColor: [200, 200, 200, 180],
-          fontFamily: "monospace",
-          getTextAnchor: "middle",
-          getAlignmentBaseline: "top" as const,
-          sizeUnits: "pixels" as const,
-          billboard: true,
-          getPixelOffset: [0, 4],
-        })
-      );
-    }
+    let cancelled = false;
 
-    // Detection zone ring
-    if (enabledMap.globe_detection_zones) {
-      const zoneRadius = 15 / 111; // ~15km in degrees
-      const zonePoints: [number, number][] = [];
-      for (let i = 0; i <= 64; i++) {
-        const angle = (i / 64) * Math.PI * 2;
-        zonePoints.push([
-          centerLon + zoneRadius * Math.cos(angle),
-          centerLat + zoneRadius * Math.sin(angle),
-        ]);
+    const init = async () => {
+      const graphicsLayer = new GraphicsLayer({ id: "intelligence-layer" });
+      graphicsLayerRef.current = graphicsLayer;
+
+      const map = new Map({
+        basemap: "dark-gray-vector",
+        layers: [graphicsLayer],
+      });
+
+      const view = new SceneView({
+        container: viewContainerRef.current!,
+        map,
+        camera: {
+          position: {
+            longitude: 87.5,
+            latitude: 10.5,
+            z: 3500000,
+          },
+          heading: 345,
+          tilt: 42,
+        },
+        environment: {
+          lighting: {
+            directShadowsEnabled: false,
+          },
+          starsEnabled: true,
+        },
+        ui: {
+          components: ["compass", "zoom", "navigation-toggle"],
+        },
+      });
+
+      if (cancelled) {
+        view.destroy();
+        return;
       }
-      deckLayers.push(
-        new PathLayer({
-          id: "detection-zone",
-          data: [{ path: zonePoints }],
-          getPath: (d: { path: [number, number][] }) => d.path,
-          getColor: [251, 146, 60, 60],
-          widthMinPixels: 1,
-          widthMaxPixels: 1,
-        })
-      );
-    }
 
-    // Vessel tracks
-    if (enabledMap.globe_tracks) {
-      DEMO_VESSELS.forEach((vessel) => {
-        if (vessel.trajectory.length > 1) {
-          const path = vessel.trajectory.map((c) => [c[1], c[0]] as [number, number]);
-          const isSelected = selectedVessel?.mmsi === vessel.mmsi;
-          deckLayers.push(
-            new PathLayer({
-              id: `track-${vessel.mmsi}`,
-              data: [{ path }],
-              getPath: (d: { path: [number, number][] }) => d.path,
-              getColor: isSelected ? [34, 211, 238, 160] : [51, 136, 204, 80],
-              widthMinPixels: isSelected ? 2.5 : 1.5,
-              widthMaxPixels: isSelected ? 3 : 2,
-              widthScale: 1,
-              rounded: true,
+      await view.when();
+      viewRef.current = view;
+
+      // Add all graphics
+      updateGraphics(layers, null);
+    };
+
+    init().catch((err) => {
+      console.error("[MARIS] ArcGIS SceneView init failed:", err);
+    });
+
+    return () => {
+      cancelled = true;
+      if (viewRef.current) {
+        viewRef.current.destroy();
+        viewRef.current = null;
+      }
+    };
+  }, []);
+
+  // ── Update graphics when layers/selection change ───────────────
+  const updateGraphics = useCallback(
+    (currentLayers: Globe3dLayer[], currentVessel: AisVessel | null) => {
+      const gl = graphicsLayerRef.current;
+      if (!gl) return;
+
+      gl.removeAll();
+      const enabledMap = Object.fromEntries(currentLayers.map((l) => [l.id, l.enabled]));
+      const centerLon = incident.polygon.center[1];
+      const centerLat = incident.polygon.center[0];
+
+      // ── OIL SPILL POLYGON ────────────────────────────────────
+      if (enabledMap.globe_spill) {
+        const spillCoords = incident.polygon.coordinates.map((c) => [c[1], c[0]]);
+
+        // Glow outline
+        gl.add(
+          new Graphic({
+            geometry: new Polygon({
+              rings: [spillCoords],
+              spatialReference: { wkid: 4326 },
+            }),
+            symbol: new SimpleFillSymbol({
+              color: [249, 115, 22, 0.06],
+              outline: new SimpleLineSymbol({
+                color: [251, 146, 60, 0.35],
+                width: 6,
+              }),
+            }),
+            attributes: { layer: "spill-glow" },
+          })
+        );
+
+        // Main spill polygon
+        gl.add(
+          new Graphic({
+            geometry: new Polygon({
+              rings: [spillCoords],
+              spatialReference: { wkid: 4326 },
+            }),
+            symbol: new SimpleFillSymbol({
+              color: [212, 119, 10, 0.3],
+              outline: new SimpleLineSymbol({
+                color: [251, 146, 60, 0.9],
+                width: 2,
+              }),
+            }),
+            attributes: { layer: "spill-fill" },
+          })
+        );
+
+        // Spill label
+        gl.add(
+          new Graphic({
+            geometry: new Point({
+              longitude: centerLon,
+              latitude: centerLat + 0.15,
+              spatialReference: { wkid: 4326 },
+            }),
+            symbol: new TextSymbol({
+              text: "OIL SPILL DETECTION",
+              color: [251, 146, 60, 220],
+              font: { size: 11, family: "monospace", weight: "bold" as any },
+              haloColor: [2, 5, 8, 0.8],
+              haloSize: 2,
+            }),
+            attributes: { layer: "spill-label" },
+          })
+        );
+
+        // Spill details
+        gl.add(
+          new Graphic({
+            geometry: new Point({
+              longitude: centerLon,
+              latitude: centerLat + 0.08,
+              spatialReference: { wkid: 4326 },
+            }),
+            symbol: new TextSymbol({
+              text: `Area: ${incident.polygon.areaKm2} km² | Confidence: ${incident.confidence.score}%`,
+              color: [200, 200, 200, 180],
+              font: { size: 9, family: "monospace" },
+              haloColor: [2, 5, 8, 0.8],
+              haloSize: 1,
+            }),
+            attributes: { layer: "spill-label-sub" },
+          })
+        );
+      }
+
+      // ── DETECTION ZONE RING ──────────────────────────────────
+      if (enabledMap.globe_detection_zones) {
+        const zoneRadius = 15 / 111;
+        const zoneRings: number[][] = [];
+        for (let i = 0; i <= 64; i++) {
+          const angle = (i / 64) * Math.PI * 2;
+          zoneRings.push([
+            centerLon + zoneRadius * Math.cos(angle),
+            centerLat + zoneRadius * Math.sin(angle),
+          ]);
+        }
+        gl.add(
+          new Graphic({
+            geometry: new Polyline({
+              paths: [zoneRings],
+              spatialReference: { wkid: 4326 },
+            }),
+            symbol: new SimpleLineSymbol({
+              color: [251, 146, 60, 0.4],
+              width: 1,
+              style: "dash" as any,
+            }),
+            attributes: { layer: "detection-zone" },
+          })
+        );
+      }
+
+      // ── VESSEL TRACKS ────────────────────────────────────────
+      if (enabledMap.globe_tracks) {
+        DEMO_VESSELS.forEach((vessel) => {
+          if (vessel.trajectory.length > 1) {
+            const path = vessel.trajectory.map((c) => [c[1], c[0]]);
+            const isSelected = currentVessel?.mmsi === vessel.mmsi;
+            gl.add(
+              new Graphic({
+                geometry: new Polyline({
+                  paths: [path],
+                  spatialReference: { wkid: 4326 },
+                }),
+                symbol: new SimpleLineSymbol({
+                  color: isSelected ? [34, 211, 238, 0.6] : [51, 136, 204, 0.35],
+                  width: isSelected ? 2.5 : 1.5,
+                }),
+                attributes: { layer: `track-${vessel.mmsi}` },
+              })
+            );
+          }
+        });
+      }
+
+      // ── AIS VESSELS ──────────────────────────────────────────
+      if (enabledMap.globe_vessels) {
+        DEMO_VESSELS.forEach((vessel) => {
+          const isSelected = currentVessel?.mmsi === vessel.mmsi;
+
+          gl.add(
+            new Graphic({
+              geometry: new Point({
+                longitude: vessel.lon,
+                latitude: vessel.lat,
+                spatialReference: { wkid: 4326 },
+              }),
+              symbol: new PictureMarkerSymbol({
+                url: shipSvg(isSelected ? "#22d3ee" : "#55aaff", isSelected),
+                width: isSelected ? "36px" : "28px",
+                height: isSelected ? "36px" : "28px",
+              }),
+              attributes: { layer: `vessel-${vessel.mmsi}`, mmsi: vessel.mmsi },
+            })
+          );
+
+          // Vessel label
+          gl.add(
+            new Graphic({
+              geometry: new Point({
+                longitude: vessel.lon,
+                latitude: vessel.lat + 0.25,
+                spatialReference: { wkid: 4326 },
+              }),
+              symbol: new TextSymbol({
+                text: `${vessel.name}  ${vessel.speed} kn → ${vessel.heading}°`,
+                color: isSelected ? [34, 211, 238, 230] : [180, 190, 200, 180],
+                font: { size: 9, family: "monospace", weight: "bold" as any },
+                haloColor: [2, 5, 8, 0.85],
+                haloSize: 1.5,
+                yoffset: -18,
+              }),
+              attributes: { layer: `vessel-label-${vessel.mmsi}` },
+            })
+          );
+        });
+      }
+
+      // ── SATELLITE OBSERVATION ────────────────────────────────
+      if (enabledMap.globe_satellite) {
+        const obs = DEMO_SATELLITE_OBSERVATION;
+
+        // Ground track
+        if (obs.groundTrack.length > 1) {
+          const trackPath = obs.groundTrack.map((c) => [c[1], c[0]]);
+          gl.add(
+            new Graphic({
+              geometry: new Polyline({
+                paths: [trackPath],
+                spatialReference: { wkid: 4326 },
+              }),
+              symbol: new SimpleLineSymbol({
+                color: [68, 204, 136, 0.5],
+                width: 1.5,
+                style: "dash" as any,
+              }),
+              attributes: { layer: "sat-ground-track" },
             })
           );
         }
-      });
-    }
 
-    // AIS vessels
-    if (enabledMap.globe_vessels) {
-      const vesselData = DEMO_VESSELS.map((v) => ({
-        position: [v.lon, v.lat] as [number, number],
-        name: v.name,
-        speed: v.speed,
-        heading: v.heading,
-        mmsi: v.mmsi,
-        isSelected: selectedVessel?.mmsi === v.mmsi,
-        icon: selectedVessel?.mmsi === v.mmsi ? SHIP_SELECTED_ICON : SHIP_ICON,
-        size: selectedVessel?.mmsi === v.mmsi ? 40 : 28,
-      }));
+        // Satellite label
+        const satLabel = `${obs.satellite}\nPASS 08921\n${new Date(obs.timestamp)
+          .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+          .toUpperCase()} ${new Date(obs.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC`;
 
-      deckLayers.push(
-        new IconLayer({
-          id: "vessels-icons",
-          data: vesselData,
-          getPosition: (d: { position: [number, number] }) => d.position,
-          getIcon: (d: { icon: string }) => ({
-            url: d.icon,
-            width: 32,
-            height: 32,
-          }),
-          getSize: (d: { size: number }) => d.size,
-          sizeUnits: "pixels",
-          pickable: true,
-          onHover: () => {},
-          onClick: (info: { object?: { mmsi: string } }) => {
-            if (info.object) {
-              const vessel = DEMO_VESSELS.find((v) => v.mmsi === info.object!.mmsi);
-              if (vessel) handleVesselSelect(vessel);
-            }
-          },
-        })
-      );
+        gl.add(
+          new Graphic({
+            geometry: new Point({
+              longitude: obs.swathCenter[1] + 1.5,
+              latitude: obs.swathCenter[0] + 1.2,
+              z: obs.orbitAltitude * 1000,
+              spatialReference: { wkid: 4326 },
+            }),
+            symbol: new TextSymbol({
+              text: satLabel,
+              color: [68, 204, 136, 200],
+              font: { size: 10, family: "monospace", weight: "bold" as any },
+              haloColor: [2, 5, 8, 0.85],
+              haloSize: 1.5,
+              lineHeight: 18,
+            }),
+            attributes: { layer: "satellite-label" },
+          })
+        );
 
-      // Vessel labels
-      deckLayers.push(
-        new TextLayer({
-          id: "vessel-labels",
-          data: vesselData,
-          getPosition: (d: { position: [number, number] }) => d.position,
-          getText: (d: { name: string; speed: number; heading: number }) =>
-            `${d.name}\n${d.speed} kn → ${d.heading}°`,
-          getSize: 9,
-          getColor: (d: { isSelected: boolean }) =>
-            d.isSelected ? [34, 211, 238, 230] : [180, 190, 200, 180],
-          fontFamily: "monospace",
-          fontWeight: "bold",
-          getTextAnchor: "middle",
-          getAlignmentBaseline: "bottom" as const,
-          sizeUnits: "pixels" as const,
-          billboard: true,
-          getPixelOffset: [0, -20],
-          lineHeight: 1.3,
-        })
-      );
-    }
+        // Swath footprint
+        const swathHalfWidth = obs.swathWidth / 2 / 111000;
+        const swathHalfLength = obs.swathLength / 2 / 111000;
+        const swathAngle = ((obs.orbitInclination > 90 ? 170 : 10) * Math.PI) / 180;
+        const cosA = Math.cos(swathAngle);
+        const sinA = Math.sin(swathAngle);
+        const scLat = obs.swathCenter[0];
+        const scLon = obs.swathCenter[1];
+        const swathCorners = [
+          [scLon - swathHalfLength * sinA - swathHalfWidth * cosA, scLat - swathHalfLength * cosA + swathHalfWidth * sinA],
+          [scLon - swathHalfLength * sinA + swathHalfWidth * cosA, scLat - swathHalfLength * cosA - swathHalfWidth * sinA],
+          [scLon + swathHalfLength * sinA + swathHalfWidth * cosA, scLat + swathHalfLength * cosA - swathHalfWidth * sinA],
+          [scLon + swathHalfLength * sinA - swathHalfWidth * cosA, scLat + swathHalfLength * cosA + swathHalfWidth * sinA],
+          [scLon - swathHalfLength * sinA - swathHalfWidth * cosA, scLat - swathHalfLength * cosA + swathHalfWidth * sinA],
+        ];
 
-    // Satellite observation
-    if (enabledMap.globe_satellite) {
-      const obs = DEMO_SATELLITE_OBSERVATION;
-
-      // Ground track
-      if (obs.groundTrack.length > 1) {
-        const trackPath = obs.groundTrack.map((c) => [c[1], c[0]] as [number, number]);
-        deckLayers.push(
-          new PathLayer({
-            id: "sat-ground-track",
-            data: [{ path: trackPath }],
-            getPath: (d: { path: [number, number][] }) => d.path,
-            getColor: [68, 204, 136, 120],
-            widthMinPixels: 1.5,
-            widthMaxPixels: 2,
-            dashJustified: true,
-            getDashArray: [6, 4],
+        gl.add(
+          new Graphic({
+            geometry: new Polygon({
+              rings: [swathCorners],
+              spatialReference: { wkid: 4326 },
+            }),
+            symbol: new SimpleFillSymbol({
+              color: [68, 204, 136, 0.04],
+              outline: new SimpleLineSymbol({
+                color: [68, 204, 136, 0.2],
+                width: 1,
+                style: "dash" as any,
+              }),
+            }),
+            attributes: { layer: "sat-swath" },
           })
         );
       }
 
-      // Satellite position
-      deckLayers.push(
-        new IconLayer({
-          id: "satellite-icon",
-          data: [
-            {
-              position: [obs.swathCenter[1], obs.swathCenter[0]] as [number, number],
-            },
-          ],
-          getPosition: (d: { position: [number, number] }) => d.position,
-          getIcon: () => ({
-            url: SATELLITE_ICON,
-            width: 28,
-            height: 28,
-          }),
-          sizeUnits: "pixels",
-          getSize: 32,
-          pickable: false,
-        })
-      );
+      // ── DRIFT PATHS ──────────────────────────────────────────
+      if (enabledMap.globe_spill) {
+        // Forward drift
+        if (DEMO_DRIFT.forward.length > 1) {
+          const fwdPath = DEMO_DRIFT.forward.map((p) => [p.center[1], p.center[0]]);
+          gl.add(
+            new Graphic({
+              geometry: new Polyline({
+                paths: [fwdPath],
+                spatialReference: { wkid: 4326 },
+              }),
+              symbol: new SimpleLineSymbol({
+                color: [249, 115, 22, 0.5],
+                width: 2,
+                style: "dash" as any,
+              }),
+              attributes: { layer: "drift-forward" },
+            })
+          );
+        }
 
-      // Satellite label
-      deckLayers.push(
-        new TextLayer({
-          id: "satellite-label",
-          data: [
-            {
-              position: [obs.swathCenter[1], obs.swathCenter[0] + 0.8],
-              text: `${obs.satellite}\nPASS 08921\n${new Date(obs.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()} ${new Date(obs.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC`,
-            },
-          ],
-          getPosition: (d: { position: [number, number] }) => d.position,
-          getText: (d: { text: string }) => d.text,
-          getSize: 9,
-          getColor: [68, 204, 136, 200],
-          fontFamily: "monospace",
-          fontWeight: "bold",
-          getTextAnchor: "start",
-          getAlignmentBaseline: "bottom" as const,
-          sizeUnits: "pixels" as const,
-          billboard: true,
-          lineHeight: 1.4,
-        })
-      );
+        // Backtrack
+        if (DEMO_DRIFT.backtrack.length > 1) {
+          const btPath = DEMO_DRIFT.backtrack.map((p) => [p.center[1], p.center[0]]);
+          gl.add(
+            new Graphic({
+              geometry: new Polyline({
+                paths: [btPath],
+                spatialReference: { wkid: 4326 },
+              }),
+              symbol: new SimpleLineSymbol({
+                color: [167, 139, 250, 0.4],
+                width: 1.5,
+                style: "dash" as any,
+              }),
+              attributes: { layer: "drift-backtrack" },
+            })
+          );
+        }
 
-      // Swath footprint
-      const swathHalfWidth = obs.swathWidth / 2 / 111000;
-      const swathHalfLength = obs.swathLength / 2 / 111000;
-      const swathAngle = ((obs.orbitInclination > 90 ? 170 : 10) * Math.PI) / 180;
-      const cosA = Math.cos(swathAngle);
-      const sinA = Math.sin(swathAngle);
-      const scLat = obs.swathCenter[0];
-      const scLon = obs.swathCenter[1];
-      const swathCorners: [number, number][] = [
-        [scLon - swathHalfLength * sinA - swathHalfWidth * cosA, scLat - swathHalfLength * cosA + swathHalfWidth * sinA],
-        [scLon - swathHalfLength * sinA + swathHalfWidth * cosA, scLat - swathHalfLength * cosA - swathHalfWidth * sinA],
-        [scLon + swathHalfLength * sinA + swathHalfWidth * cosA, scLat + swathHalfLength * cosA - swathHalfWidth * sinA],
-        [scLon + swathHalfLength * sinA - swathHalfWidth * cosA, scLat + swathHalfLength * cosA + swathHalfWidth * sinA],
-      ];
-      deckLayers.push(
-        new PolygonLayer({
-          id: "sat-swath",
-          data: [{ polygon: swathCorners }],
-          getPolygon: (d: { polygon: [number, number][] }) => d.polygon,
-          getFillColor: [68, 204, 136, 12],
-          getLineColor: [68, 204, 136, 50],
-          lineWidthMinPixels: 1,
-          lineWidthMaxPixels: 1,
-          pickable: false,
-        })
-      );
-    }
-
-    // Drift prediction paths
-    if (enabledMap.globe_spill) {
-      // Forward drift
-      if (DEMO_DRIFT.forward.length > 1) {
-        const fwdPath = DEMO_DRIFT.forward.map((p) => [p.center[1], p.center[0]] as [number, number]);
-        deckLayers.push(
-          new PathLayer({
-            id: "drift-forward",
-            data: [{ path: fwdPath }],
-            getPath: (d: { path: [number, number][] }) => d.path,
-            getColor: [249, 115, 22, 120],
-            widthMinPixels: 2,
-            widthMaxPixels: 2,
-            dashJustified: true,
-            getDashArray: [8, 6],
-          })
-        );
+        // Drift time points
+        DEMO_DRIFT.forward.forEach((point, i) => {
+          if (i === 0) return;
+          gl.add(
+            new Graphic({
+              geometry: new Point({
+                longitude: point.center[1],
+                latitude: point.center[0],
+                spatialReference: { wkid: 4326 },
+              }),
+              symbol: new TextSymbol({
+                text: point.time,
+                color: [249, 115, 22, 140 + (4 - i) * 20],
+                font: { size: 7, family: "monospace" },
+                haloColor: [2, 5, 8, 0.7],
+                haloSize: 1,
+                yoffset: 12,
+              }),
+              attributes: { layer: `drift-label-${i}` },
+            })
+          );
+        });
       }
 
-      // Backtrack
-      if (DEMO_DRIFT.backtrack.length > 1) {
-        const btPath = DEMO_DRIFT.backtrack.map((p) => [p.center[1], p.center[0]] as [number, number]);
-        deckLayers.push(
-          new PathLayer({
-            id: "drift-backtrack",
-            data: [{ path: btPath }],
-            getPath: (d: { path: [number, number][] }) => d.path,
-            getColor: [167, 139, 250, 100],
-            widthMinPixels: 1.5,
-            widthMaxPixels: 2,
-            dashJustified: true,
-            getDashArray: [6, 4],
-          })
-        );
+      // ── MARITIME GRID ────────────────────────────────────────
+      if (enabledMap.globe_grid) {
+        const gridLines: number[][][] = [];
+        for (let lat = 5; lat <= 20; lat += 5) {
+          const pts: number[][] = [];
+          for (let lon = 80; lon <= 95; lon += 0.5) pts.push([lon, lat]);
+          gridLines.push(pts);
+        }
+        for (let lon = 81; lon <= 93; lon += 3) {
+          const pts: number[][] = [];
+          for (let lat = 5; lat <= 20; lat += 0.5) pts.push([lon, lat]);
+          gridLines.push(pts);
+        }
+        gridLines.forEach((pts, i) => {
+          gl.add(
+            new Graphic({
+              geometry: new Polyline({
+                paths: [pts],
+                spatialReference: { wkid: 4326 },
+              }),
+              symbol: new SimpleLineSymbol({
+                color: [51, 65, 85, 0.25],
+                width: 0.5,
+              }),
+              attributes: { layer: `grid-${i}` },
+            })
+          );
+        });
       }
+    },
+    [incident]
+  );
 
-      // Drift time labels
-      DEMO_DRIFT.forward.forEach((point, i) => {
-        if (i === 0) return;
-        deckLayers.push(
-          new ScatterplotLayer({
-            id: `drift-point-${i}`,
-            data: [{ position: [point.center[1], point.center[0]] }],
-            getPosition: (d: { position: [number, number] }) => d.position,
-            getRadius: 1500,
-            getFillColor: [249, 115, 22, 40 + (4 - i) * 15],
-            getLineColor: [249, 115, 22, 80],
-            lineWidthMinPixels: 1,
-            radiusUnits: "meters" as const,
-          })
-        );
-      });
-    }
-
-    // Maritime grid
-    if (enabledMap.globe_grid) {
-      const gridLines: { path: [number, number][] }[] = [];
-      for (let lat = 5; lat <= 20; lat += 5) {
-        const path: [number, number][] = [];
-        for (let lon = 80; lon <= 95; lon += 0.5) path.push([lon, lat]);
-        gridLines.push({ path });
-      }
-      for (let lon = 81; lon <= 93; lon += 3) {
-        const path: [number, number][] = [];
-        for (let lat = 5; lat <= 20; lat += 0.5) path.push([lon, lat]);
-        gridLines.push({ path });
-      }
-      deckLayers.push(
-        new PathLayer({
-          id: "maritime-grid",
-          data: gridLines,
-          getPath: (d: { path: [number, number][] }) => d.path,
-          getColor: [51, 65, 85, 40],
-          widthMinPixels: 0.5,
-          widthMaxPixels: 0.5,
-        })
-      );
-    }
-
-    return deckLayers;
-  }, [layers, selectedVessel, incident]);
-
-  // ── Update deck overlay ───────────────────────────────────────
+  // ── Sync graphics when layers change ──────────────────────────
   useEffect(() => {
-    if (overlayRef.current) {
-      overlayRef.current.setProps({ layers: buildDeckLayers() as never[] });
-    }
-  }, [buildDeckLayers]);
-
-  // ── Initialize MapLibre with globe projection ─────────────────
-  useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
-
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: `https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json?key=${CARTO_API_KEY}`,
-      center: [86.97, 12.05],
-      zoom: 3.8,
-      pitch: 42,
-      bearing: -15,
-      attributionControl: false,
-    });
-
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
-
-    // Wait for style to fully load before setting projection and adding deck.gl overlay
-    const onStyleLoad = () => {
-      map.resize();
-      map.setProjection({ type: "globe" });
-      const deckOverlay = new MapboxOverlay({
-        interleaved: false,
-        layers: [],
-      });
-      map.addControl(deckOverlay as unknown as maplibregl.IControl);
-      overlayRef.current = deckOverlay;
-    };
-    map.on("load", onStyleLoad);
-
-    mapRef.current = map;
-
-    return () => {
-      map.off("load", onStyleLoad);
-      map.remove();
-      mapRef.current = null;
-    };
-  }, []);
+    updateGraphics(layers, selectedVessel);
+  }, [layers, selectedVessel, updateGraphics]);
 
   // ── Handle vessel selection ─────────────────────────────────────
   const handleVesselSelect = useCallback((vessel: AisVessel) => {
     setSelectedVessel(vessel);
-    const map = mapRef.current;
-    if (!map) return;
-    map.flyTo({
-      center: [vessel.lon, vessel.lat],
-      zoom: 7,
-      pitch: 45,
-      duration: 2000,
-    });
+    const view = viewRef.current;
+    if (!view) return;
+    view.goTo(
+      {
+        target: new Point({
+          longitude: vessel.lon,
+          latitude: vessel.lat,
+          z: 600000,
+        }),
+        heading: 350,
+        tilt: 45,
+      },
+      { duration: 2000 }
+    );
   }, []);
 
   // ── Fly to spill ──────────────────────────────────────────────
   const flyToSpill = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    map.flyTo({
-      center: [incident.polygon.center[1], incident.polygon.center[0]],
-      zoom: 5.5,
-      pitch: 42,
-      duration: 2000,
-    });
+    const view = viewRef.current;
+    if (!view) return;
+    view.goTo(
+      {
+        target: new Point({
+          longitude: incident.polygon.center[1],
+          latitude: incident.polygon.center[0],
+          z: 1200000,
+        }),
+        heading: 345,
+        tilt: 42,
+      },
+      { duration: 2000 }
+    );
   }, [incident]);
 
   // ── Toggle layer ──────────────────────────────────────────────
@@ -588,66 +641,61 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ─── LEFT PANEL ────────────────────────────────────── */}
-        <aside className="h-full z-20">
-          <div className="w-56 border-r border-zinc-800/50 bg-[#060a10]/95 flex flex-col overflow-hidden h-full">
-            {/* Vessel list */}
-            <div className="px-3 py-2.5 border-b border-zinc-800/50">
-              <h2 className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Vessels</h2>
+        <aside className="w-56 border-r border-zinc-800/50 bg-[#060a10]/95 flex flex-col overflow-hidden z-20">
+          <div className="px-3 py-2.5 border-b border-zinc-800/50">
+            <h2 className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Vessels</h2>
+          </div>
+          <div className="px-3 py-2 border-b border-zinc-800/50">
+            <div className="flex items-center gap-1.5 rounded border border-zinc-700/50 bg-zinc-800/30 px-2 py-1">
+              <Search className="size-3 text-zinc-500" />
+              <input type="text" placeholder="Search vessel or MMSI" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-1 bg-transparent text-[10px] text-zinc-300 placeholder-zinc-600 outline-none" />
+              <Filter className="size-3 text-zinc-600" />
             </div>
-            <div className="px-3 py-2 border-b border-zinc-800/50">
-              <div className="flex items-center gap-1.5 rounded border border-zinc-700/50 bg-zinc-800/30 px-2 py-1">
-                <Search className="size-3 text-zinc-500" />
-                <input type="text" placeholder="Search vessel or MMSI" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-1 bg-transparent text-[10px] text-zinc-300 placeholder-zinc-600 outline-none" />
-                <Filter className="size-3 text-zinc-600" />
-              </div>
-            </div>
-            <div className="px-3 py-1.5 border-b border-zinc-800/50">
-              <span className="text-[8px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-400 font-medium">ALL {DEMO_VESSELS.length}</span>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {filteredVessels.map((v) => {
-                const attr = DEMO_ATTRIBUTIONS.find((a) => a.vesselId === v.mmsi);
-                const sel = selectedVessel?.mmsi === v.mmsi;
-                return (
-                  <button key={v.mmsi} onClick={() => handleVesselSelect(v)} className={cn("w-full text-left px-3 py-2 border-b border-zinc-800/30 transition-colors", sel ? "bg-cyan-500/8" : "hover:bg-zinc-800/30")}>
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[10px] font-semibold text-zinc-200">{v.name}</span>
-                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">ACTIVE</span>
-                    </div>
-                    <div className="text-[8px] text-zinc-500 font-mono mb-0.5">MMSI {v.mmsi}</div>
-                    <div className="flex items-center gap-3 text-[9px] text-zinc-400">
-                      <span>{v.speed} kn</span><span>→ {v.heading}°</span>
-                    </div>
-                    {attr && <div className="mt-1 text-[8px] font-bold text-orange-400">Source: {attr.overallScore}/100</div>}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="px-3 py-2 border-t border-zinc-800/50">
-              <button onClick={flyToSpill} className="w-full text-center text-[9px] text-cyan-400 hover:text-cyan-300 transition-colors py-1">VIEW SPILL LOCATION</button>
-            </div>
-
-            {/* Layers */}
-            <div className="px-3 py-2.5 border-t border-zinc-800/50">
-              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Layers className="size-3" />Layers</h3>
-              <div className="space-y-1">
-                {layers.map((l) => (
-                  <button key={l.id} onClick={() => toggleLayer(l.id)} className="flex items-center gap-2 w-full text-left">
-                    <div className="text-[8px] text-zinc-600">✦</div>
-                    <span className="text-[10px] text-zinc-400 flex-1">{l.label}</span>
-                    <div className={cn("w-7 h-3.5 rounded-full transition-colors relative", l.enabled ? "bg-cyan-500/30" : "bg-zinc-700/50")}>
-                      <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all", l.enabled ? "left-3.5 bg-cyan-400" : "left-0.5 bg-zinc-500")} />
-                    </div>
-                  </button>
-                ))}
-              </div>
+          </div>
+          <div className="px-3 py-1.5 border-b border-zinc-800/50">
+            <span className="text-[8px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-400 font-medium">ALL {DEMO_VESSELS.length}</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {filteredVessels.map((v) => {
+              const attr = DEMO_ATTRIBUTIONS.find((a) => a.vesselId === v.mmsi);
+              const sel = selectedVessel?.mmsi === v.mmsi;
+              return (
+                <button key={v.mmsi} onClick={() => handleVesselSelect(v)} className={cn("w-full text-left px-3 py-2 border-b border-zinc-800/30 transition-colors", sel ? "bg-cyan-500/8" : "hover:bg-zinc-800/30")}>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-[10px] font-semibold text-zinc-200">{v.name}</span>
+                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">ACTIVE</span>
+                  </div>
+                  <div className="text-[8px] text-zinc-500 font-mono mb-0.5">MMSI {v.mmsi}</div>
+                  <div className="flex items-center gap-3 text-[9px] text-zinc-400">
+                    <span>{v.speed} kn</span><span>→ {v.heading}°</span>
+                  </div>
+                  {attr && <div className="mt-1 text-[8px] font-bold text-orange-400">Source: {attr.overallScore}/100</div>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="px-3 py-2 border-t border-zinc-800/50">
+            <button onClick={flyToSpill} className="w-full text-center text-[9px] text-cyan-400 hover:text-cyan-300 transition-colors py-1">VIEW SPILL LOCATION</button>
+          </div>
+          <div className="px-3 py-2.5 border-t border-zinc-800/50">
+            <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Layers className="size-3" />Layers</h3>
+            <div className="space-y-1">
+              {layers.map((l) => (
+                <button key={l.id} onClick={() => toggleLayer(l.id)} className="flex items-center gap-2 w-full text-left">
+                  <div className="text-[8px] text-zinc-600">✦</div>
+                  <span className="text-[10px] text-zinc-400 flex-1">{l.label}</span>
+                  <div className={cn("w-7 h-3.5 rounded-full transition-colors relative", l.enabled ? "bg-cyan-500/30" : "bg-zinc-700/50")}>
+                    <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all", l.enabled ? "left-3.5 bg-cyan-400" : "left-0.5 bg-zinc-500")} />
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </aside>
 
-        {/* ─── MAPLIBRE GLOBE ────────────────────────────────── */}
+        {/* ─── ARCGIS SCENEVIEW ──────────────────────────────── */}
         <main className="flex-1 relative">
-          <div ref={mapContainerRef} className="absolute inset-0" style={{ width: "100%", height: "100%" }} />
+          <div ref={viewContainerRef} className="absolute inset-0" style={{ width: "100%", height: "100%" }} />
 
           {/* Compass / nav */}
           <div className="absolute bottom-20 left-6 z-10">
