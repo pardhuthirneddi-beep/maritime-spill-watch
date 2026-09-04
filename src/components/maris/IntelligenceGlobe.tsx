@@ -1,9 +1,8 @@
 // maris — 3D Geospatial Intelligence Globe
-// Maritime command center visualization using CesiumJS
+// Maritime command center visualization using Three.js
 import { useRef, useEffect, useState, useCallback } from "react";
-
-// Cesium base URL is set in index.html <script> tag before module loads
-import * as Cesium from "cesium";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   ArrowLeft,
   ChevronRight,
@@ -30,36 +29,56 @@ import {
   DEMO_ENVIRONMENTAL,
   DEMO_SATELLITE_OBSERVATION,
 } from "@/data/demoData";
+import { generateEarthTexture } from "@/components/maris/earthTexture";
 import type {
   AisVessel,
   Globe3dLayer,
   Globe3dLayerId,
 } from "@/data/types";
 
-const CARTO_API_KEY = "cb1_2u58_1_bf57649a9ebd93a4418be433";
+// ─── CONSTANTS ──────────────────────────────────────────────────────
 
-// Entity tag prefixes for layer visibility control
-const LAYER_ENTITY_PREFIXES: Record<Globe3dLayerId, string[]> = {
-  globe_vessels: ["vessel-"],
-  globe_tracks: ["track-"],
-  globe_spill: ["spill-"],
-  globe_satellite: ["satellite-", "satellite-track-", "satellite-swath-"],
-  globe_boundaries: ["coastline-"],
-  globe_grid: ["maritime-zone-"],
-  globe_detection_zones: ["detection-zone-"],
+const GLOBE_RADIUS = 5;
+const ATMOSPHERE_RADIUS = 5.12;
+const EARTH_CENTER = new THREE.Vector3(0, 0, 0);
+
+// Layer entity group names for visibility control
+const LAYER_GROUP_NAMES: Record<Globe3dLayerId, string> = {
+  globe_vessels: "vessels",
+  globe_tracks: "tracks",
+  globe_spill: "spill",
+  globe_satellite: "satellite",
+  globe_boundaries: "grid",
+  globe_grid: "grid",
+  globe_detection_zones: "spill",
 };
 
 interface IntelligenceGlobeProps {
   onBack: () => void;
 }
 
+// ─── GEO-TO-3D CONVERSION ───────────────────────────────────────────
+
+function latLonToVec3(lat: number, lon: number, radius = GLOBE_RADIUS): THREE.Vector3 {
+  const phi = (90 - lat) * (Math.PI / 180);
+  const theta = (lon + 180) * (Math.PI / 180);
+  return new THREE.Vector3(
+    -(radius * Math.sin(phi) * Math.cos(theta)),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
 // ─── MAIN COMPONENT ─────────────────────────────────────────────────
 
 export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
-  const cesiumContainerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<Cesium.Viewer | null>(null);
-  const entityMapRef = useRef<Map<string, Cesium.Entity>>(new Map());
-  const [viewerError, setViewerError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const groupMapRef = useRef<Map<string, THREE.Group>>(new Map());
+  const animFrameRef = useRef<number>(0);
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [vesselFilter, setVesselFilter] = useState<"all" | "near" | "watch">("all");
@@ -101,548 +120,512 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
     return true;
   });
 
-  // ── Initialize Cesium viewer ───────────────────────────────────
+  // ── Initialize Three.js scene ─────────────────────────────────
   useEffect(() => {
-    if (!cesiumContainerRef.current || viewerRef.current) return;
+    if (!containerRef.current) return;
 
-    try {
-      // Check WebGL support
-      const canvas = document.createElement("canvas");
-      const gl = canvas.getContext("webgl") || canvas.getContext("webgl2");
-      if (!gl) {
-        setViewerError("WebGL is not supported in this environment. The 3D globe requires WebGL to render.");
-        return;
-      }
+    // WebGL check
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl") || canvas.getContext("webgl2");
+    if (!gl) return;
 
-      const viewer = new Cesium.Viewer(cesiumContainerRef.current, {
-        baseLayerPicker: false,
-        geocoder: false,
-        homeButton: false,
-        sceneModePicker: false,
-        selectionIndicator: false,
-        navigationHelpButton: false,
-        animation: false,
-        timeline: false,
-        fullscreenButton: false,
-        vrButton: false,
-        infoBox: false,
-        shadows: false,
-        shouldAnimate: true,
-      });
+    const container = containerRef.current;
+    const width = container.clientWidth || window.innerWidth;
+    const height = container.clientHeight || window.innerHeight;
 
-      // ── Dark Carto basemap ────────────────────────────────────────
-      viewer.imageryLayers.removeAll();
-      viewer.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-          subdomains: ["a", "b", "c", "d"],
-          maximumLevel: 18,
-          credit: new Cesium.Credit("© CARTO © OpenStreetMap contributors"),
-        })
-      );
+    // Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020508);
 
-      // ── Dark scene styling ────────────────────────────────────────
-      viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020508");
-      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#071320");
+    // Camera
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    // Position camera to look at Bay of Bengal region (India / Sri Lanka area)
+    const initTarget = latLonToVec3(12.0471, 86.9718, 0);
+    const initCam = latLonToVec3(8, 90, GLOBE_RADIUS * 2.2);
+    camera.position.copy(initCam);
+    camera.lookAt(initTarget);
 
-      // Atmosphere
-      if (viewer.scene.skyAtmosphere) {
-        viewer.scene.skyAtmosphere.show = true;
-      }
-      if (viewer.scene.skyBox) {
-        viewer.scene.skyBox.show = false;
-      }
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    container.appendChild(renderer.domElement);
 
-      // Fog for depth/atmosphere
-      viewer.scene.fog.enabled = true;
-      viewer.scene.fog.density = 0.00015;
-      viewer.scene.fog.screenSpaceErrorFactor = 2.0;
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.rotateSpeed = 0.5;
+    controls.zoomSpeed = 0.8;
+    controls.minDistance = GLOBE_RADIUS * 1.15;
+    controls.maxDistance = GLOBE_RADIUS * 6;
+    controls.target.copy(initTarget);
+    controls.enablePan = false;
 
-      // Globe lighting
-      viewer.scene.globe.enableLighting = false;
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x334466, 0.6);
+    scene.add(ambientLight);
 
-      // Smooth camera near/far for ocean viewing
-      viewer.scene.camera.frustum.near = 100.0;
-      viewer.scene.camera.frustum.far = 20000000.0;
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    sunLight.position.set(10, 8, 5);
+    scene.add(sunLight);
 
-      // ── Initial camera — orbital view of Bay of Bengal ────────────
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(87.0, 12.0, 2800000),
-        orientation: {
-          heading: Cesium.Math.toRadians(10),
-          pitch: Cesium.Math.toRadians(-35),
-          roll: 0,
-        },
-        duration: 2.5,
-      });
+    const fillLight = new THREE.DirectionalLight(0x446688, 0.3);
+    fillLight.position.set(-5, -2, -3);
+    scene.add(fillLight);
 
-      viewerRef.current = viewer;
-    } catch (err) {
-      console.error("[MARIS] Cesium viewer init failed:", err);
-      setViewerError(err instanceof Error ? err.message : "Failed to initialize 3D globe.");
+    // ── Earth globe ──────────────────────────────────────────────
+    const earthTextureCanvas = generateEarthTexture(2048, 1024);
+    const earthTexture = new THREE.CanvasTexture(earthTextureCanvas);
+    earthTexture.wrapS = THREE.RepeatWrapping;
+    earthTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+    const earthGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 128, 64);
+    const earthMat = new THREE.MeshPhongMaterial({
+      map: earthTexture,
+      specular: new THREE.Color(0x111822),
+      shininess: 15,
+    });
+    const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+    scene.add(earthMesh);
+
+    // ── Atmosphere glow ──────────────────────────────────────────
+    const atmosphereGeo = new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 64, 32);
+    const atmosphereMat = new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        void main() {
+          vec3 viewDir = normalize(-vPosition);
+          float rim = 1.0 - max(dot(viewDir, vNormal), 0.0);
+          float intensity = pow(rim, 3.0) * 0.6;
+          gl_FragColor = vec4(0.2, 0.5, 0.8, intensity);
+        }
+      `,
+      transparent: true,
+      side: THREE.FrontSide,
+      depthWrite: false,
+    });
+    const atmosphereMesh = new THREE.Mesh(atmosphereGeo, atmosphereMat);
+    scene.add(atmosphereMesh);
+
+    // ── Star field background ────────────────────────────────────
+    const starsGeo = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(3000);
+    for (let i = 0; i < 3000; i++) {
+      starPositions[i] = (Math.random() - 0.5) * 200;
     }
+    starsGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    const starsMat = new THREE.PointsMaterial({ color: 0x667799, size: 0.08, transparent: true, opacity: 0.5 });
+    scene.add(new THREE.Points(starsGeo, starsMat));
 
-    return () => {
-      if (viewerRef.current) {
-        viewerRef.current.destroy();
-        viewerRef.current = null;
-      }
-    };
-  }, []);
-
-  // ── Add all entities when viewer is ready ───────────────────────
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
-    const entities = viewer.entities;
-    const map = entityMapRef.current;
+    // ── Layer groups ─────────────────────────────────────────────
+    const groupMap = new Map<string, THREE.Group>();
+    const groupNames = ["vessels", "tracks", "spill", "satellite", "grid"];
+    groupNames.forEach((name) => {
+      const g = new THREE.Group();
+      g.name = name;
+      scene.add(g);
+      groupMap.set(name, g);
+    });
+    groupMapRef.current = groupMap;
 
     // ── OIL SPILL POLYGON ────────────────────────────────────────
-    const spillPositions = incident.polygon.coordinates.map((c) =>
-      Cesium.Cartesian3.fromDegrees(c[1], c[0])
-    );
+    const spillGroup = groupMap.get("spill")!;
+    const spillCoords = incident.polygon.coordinates;
 
-    const spillEntity = entities.add({
-      id: "spill-polygon",
-      polygon: {
-        hierarchy: new Cesium.PolygonHierarchy(spillPositions),
-        material: Cesium.Color.fromCssColorString("#d4770a").withAlpha(0.25),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.9),
-        outlineWidth: 2,
-        height: 10,
-      },
+    // Spill polygon fill
+    const spillVerts: THREE.Vector3[] = spillCoords.map((c) => latLonToVec3(c[0], c[1], GLOBE_RADIUS + 0.005));
+    const spillShape = new THREE.BufferGeometry();
+    // Fan triangulation from centroid
+    const centroid = new THREE.Vector3();
+    spillVerts.forEach((v) => centroid.add(v));
+    centroid.divideScalar(spillVerts.length);
+    const spillTriangles: number[] = [];
+    for (let i = 0; i < spillVerts.length - 1; i++) {
+      centroid.toArray(spillTriangles, spillTriangles.length);
+      spillVerts[i].toArray(spillTriangles, spillTriangles.length);
+      spillVerts[i + 1].toArray(spillTriangles, spillTriangles.length);
+    }
+    spillShape.setAttribute("position", new THREE.Float32BufferAttribute(spillTriangles, 3));
+    spillShape.computeVertexNormals();
+    const spillMat = new THREE.MeshBasicMaterial({
+      color: 0xd4770a,
+      transparent: true,
+      opacity: 0.25,
+      side: THREE.DoubleSide,
+      depthWrite: false,
     });
-    map.set("spill-polygon", spillEntity);
+    spillGroup.add(new THREE.Mesh(spillShape, spillMat));
 
-    // Spill outline (brighter second ring for glow effect)
-    const spillOutlineEntity = entities.add({
-      id: "spill-outline-glow",
-      polygon: {
-        hierarchy: new Cesium.PolygonHierarchy(spillPositions),
-        material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.08),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.4),
-        outlineWidth: 6,
-        height: 8,
-      },
-    });
-    map.set("spill-polygon", spillOutlineEntity);
+    // Spill outline
+    const outlinePoints = spillCoords.map((c) => latLonToVec3(c[0], c[1], GLOBE_RADIUS + 0.008));
+    const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePoints);
+    const outlineMat = new THREE.LineBasicMaterial({ color: 0xfb923c, linewidth: 2, transparent: true, opacity: 0.9 });
+    spillGroup.add(new THREE.LineLoop(outlineGeo, outlineMat));
 
     // Spill center marker
-    const spillCenter = entities.add({
-      id: "spill-center",
-      position: Cesium.Cartesian3.fromDegrees(incident.polygon.center[1], incident.polygon.center[0], 500),
-      point: {
-        pixelSize: 10,
-        color: Cesium.Color.fromCssColorString("#fb923c"),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 2,
-        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-      },
-      label: {
-        text: `OIL SPILL DETECTION\nArea: ${incident.polygon.areaKm2} km² | Confidence: ${incident.confidence.score}%`,
-        font: "12px monospace",
-        fillColor: Cesium.Color.WHITE,
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 2,
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -18),
-        showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.85),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      },
-    });
-    map.set("spill-polygon", spillCenter);
+    const centerPos = latLonToVec3(incident.polygon.center[0], incident.polygon.center[1], GLOBE_RADIUS + 0.015);
+    const markerGeo = new THREE.SphereGeometry(0.025, 16, 16);
+    const markerMat = new THREE.MeshBasicMaterial({ color: 0xfb923c });
+    const markerMesh = new THREE.Mesh(markerGeo, markerMat);
+    markerMesh.position.copy(centerPos);
+    spillGroup.add(markerMesh);
 
-    // ── DETECTION ZONE RING ───────────────────────────────────────
-    const detectionZone = entities.add({
-      id: "detection-zone-ring",
-      position: Cesium.Cartesian3.fromDegrees(incident.polygon.center[1], incident.polygon.center[0]),
-      ellipse: {
-        semiMajorAxis: 15000,  // 15 km radius
-        semiMinorAxis: 15000,
-        material: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.05),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.25),
-        outlineWidth: 1,
-        height: 5,
-        numberOfVerticalLines: 0,
-      },
-    });
-    map.set("detection-zone-", detectionZone);
+    // Detection zone ring (15km radius)
+    const zoneRingPoints: THREE.Vector3[] = [];
+    const zoneRadiusDeg = 15 / 111; // ~15km in degrees
+    const centerLat = incident.polygon.center[0];
+    const centerLon = incident.polygon.center[1];
+    for (let i = 0; i <= 64; i++) {
+      const angle = (i / 64) * Math.PI * 2;
+      const rLat = centerLat + zoneRadiusDeg * Math.cos(angle);
+      const rLon = centerLon + zoneRadiusDeg * Math.sin(angle);
+      zoneRingPoints.push(latLonToVec3(rLat, rLon, GLOBE_RADIUS + 0.003));
+    }
+    const zoneRingGeo = new THREE.BufferGeometry().setFromPoints(zoneRingPoints);
+    const zoneRingMat = new THREE.LineBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.2 });
+    spillGroup.add(new THREE.LineLoop(zoneRingGeo, zoneRingMat));
 
     // ── AIS VESSELS ──────────────────────────────────────────────
+    const vesselGroup = groupMap.get("vessels")!;
+    const trackGroup = groupMap.get("tracks")!;
+
     DEMO_VESSELS.forEach((vessel) => {
-      // Heading arrow direction in radians
-      const headingRad = Cesium.Math.toRadians(vessel.heading);
-      // Heading arrow line (small line showing direction from vessel)
-      const arrowLen = 0.008; // ~0.9 km
-      const arrowEndLat = vessel.lat + arrowLen * Math.cos(headingRad);
-      const arrowEndLon = vessel.lon + arrowLen * Math.sin(headingRad);
+      const vPos = latLonToVec3(vessel.lat, vessel.lon, GLOBE_RADIUS + 0.01);
 
-      // Vessel marker
-      const vesselEntity = entities.add({
-        id: `vessel-${vessel.mmsi}`,
-        position: Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 100),
-        point: {
-          pixelSize: 8,
-          color: Cesium.Color.fromCssColorString("#55aaff"),
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 1.5,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-        },
-        label: {
-          text: vessel.name,
-          font: "10px monospace",
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -14),
-          showBackground: true,
-          backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.75),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scale: 0.9,
-        },
-      });
-      map.set(`vessel-${vessel.mmsi}`, vesselEntity);
+      // Vessel marker - a small ship-shaped marker using a cone for heading
+      const vesselMarker = new THREE.Group();
+      vesselMarker.name = `vessel-${vessel.mmsi}`;
 
-      // Heading indicator arrow
-      const headingEntity = entities.add({
-        id: `vessel-heading-${vessel.mmsi}`,
-        polyline: {
-          positions: [
-            Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 100),
-            Cesium.Cartesian3.fromDegrees(arrowEndLon, arrowEndLat, 100),
-          ],
-          width: 2,
-          material: new Cesium.PolylineGlowMaterialProperty({
-            glowPower: 0.15,
-            color: Cesium.Color.fromCssColorString("#55aaff").withAlpha(0.7),
-          }),
-        },
-      });
-      map.set(`vessel-${vessel.mmsi}`, headingEntity);
+      // Ship body (sphere)
+      const bodyGeo = new THREE.SphereGeometry(0.02, 12, 12);
+      const bodyMat = new THREE.MeshBasicMaterial({ color: 0x55aaff });
+      const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+      vesselMarker.add(bodyMesh);
+
+      // Heading indicator (small line)
+      const headingRad = (vessel.heading * Math.PI) / 180;
+      const headingLen = 0.06;
+      // Convert heading to3D direction on globe surface
+      const headingDir = new THREE.Vector3();
+      const tangentUp = vPos.clone().normalize();
+      // Approximate local tangent plane
+      const northDir = latLonToVec3(vessel.lat + 0.01, vessel.lon, GLOBE_RADIUS + 0.01).sub(vPos).normalize();
+      const eastDir = new THREE.Vector3().crossVectors(tangentUp, northDir).normalize();
+      headingDir
+        .addScaledVector(northDir, Math.cos(headingRad))
+        .addScaledVector(eastDir, Math.sin(headingRad))
+        .normalize();
+      const headingEnd = vPos.clone().add(headingDir.multiplyScalar(headingLen));
+      const headingGeo = new THREE.BufferGeometry().setFromPoints([vPos.clone().add(tangentUp.clone().multiplyScalar(0.005)), headingEnd]);
+      const headingMat = new THREE.LineBasicMaterial({ color: 0x55aaff, transparent: true, opacity: 0.7 });
+      vesselMarker.add(new THREE.Line(headingGeo, headingMat));
+
+      vesselMarker.position.copy(vPos);
+      vesselGroup.add(vesselMarker);
 
       // Vessel track
       if (vessel.trajectory.length > 1) {
-        const trackPositions = vessel.trajectory.map((c) =>
-          Cesium.Cartesian3.fromDegrees(c[1], c[0])
-        );
+        const trackPoints = vessel.trajectory.map((c) => latLonToVec3(c[0], c[1], GLOBE_RADIUS + 0.003));
+        const trackGeo = new THREE.BufferGeometry().setFromPoints(trackPoints);
+        const trackMat = new THREE.LineBasicMaterial({ color: 0x3388cc, transparent: true, opacity: 0.4 });
+        trackGroup.add(new THREE.Line(trackGeo, trackMat));
 
-        const trackEntity = entities.add({
-          id: `track-${vessel.mmsi}`,
-          polyline: {
-            positions: trackPositions,
-            width: 2,
-            material: new Cesium.PolylineGlowMaterialProperty({
-              glowPower: 0.1,
-              color: Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.5),
-            }),
-          },
-        });
-        map.set(`track-${vessel.mmsi}`, trackEntity);
-
-        // Track direction arrows at midpoints
+        // Track direction arrow at midpoint
         if (vessel.trajectory.length >= 3) {
           const midIdx = Math.floor(vessel.trajectory.length / 2);
           const prevIdx = Math.max(0, midIdx - 1);
-          const tAngle = Math.atan2(
-            vessel.trajectory[midIdx][1] - vessel.trajectory[prevIdx][1],
-            vessel.trajectory[midIdx][0] - vessel.trajectory[prevIdx][0]
-          );
-          const tArrowLen = 0.004;
-          const tMidLat = vessel.trajectory[midIdx][0];
-          const tMidLon = vessel.trajectory[midIdx][1];
-
-          const trackArrowEntity = entities.add({
-            id: `track-arrow-${vessel.mmsi}`,
-            polyline: {
-              positions: [
-                Cesium.Cartesian3.fromDegrees(
-                  tMidLon - tArrowLen * Math.sin(tAngle + 0.4),
-                  tMidLat - tArrowLen * Math.cos(tAngle + 0.4)
-                ),
-                Cesium.Cartesian3.fromDegrees(tMidLon, tMidLat),
-                Cesium.Cartesian3.fromDegrees(
-                  tMidLon - tArrowLen * Math.sin(tAngle - 0.4),
-                  tMidLat - tArrowLen * Math.cos(tAngle - 0.4)
-                ),
-              ],
-              width: 1.5,
-              material: Cesium.Color.fromCssColorString("#3388cc").withAlpha(0.6),
-            },
-          });
-          map.set(`track-${vessel.mmsi}`, trackArrowEntity);
+          const midPos = latLonToVec3(vessel.trajectory[midIdx][0], vessel.trajectory[midIdx][1], GLOBE_RADIUS + 0.006);
+          const arrowGeo = new THREE.ConeGeometry(0.008, 0.02, 6);
+          const arrowMat = new THREE.MeshBasicMaterial({ color: 0x3388cc, transparent: true, opacity: 0.6 });
+          const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+          arrowMesh.position.copy(midPos);
+          // Orient arrow based on trajectory direction
+          const dir = new THREE.Vector3()
+            .subVectors(
+              latLonToVec3(vessel.trajectory[midIdx][0], vessel.trajectory[midIdx][1], GLOBE_RADIUS + 0.003),
+              latLonToVec3(vessel.trajectory[prevIdx][0], vessel.trajectory[prevIdx][1], GLOBE_RADIUS + 0.003)
+            )
+            .normalize();
+          arrowMesh.lookAt(midPos.clone().add(dir));
+          arrowMesh.rotateX(Math.PI / 2);
+          trackGroup.add(arrowMesh);
         }
       }
     });
 
     // ── SATELLITE OBSERVATION ────────────────────────────────────
+    const satGroup = groupMap.get("satellite")!;
     const obs = DEMO_SATELLITE_OBSERVATION;
 
     // Ground track
     if (obs.groundTrack.length > 1) {
-      const trackPositions = obs.groundTrack.map((c) =>
-        Cesium.Cartesian3.fromDegrees(c[1], c[0])
-      );
-
-      const satTrackEntity = entities.add({
-        id: "satellite-track-line",
-        polyline: {
-          positions: trackPositions,
-          width: 2,
-          material: new Cesium.PolylineDashMaterialProperty({
-            color: Cesium.Color.fromCssColorString("#44cc88"),
-            dashLength: 16,
-          }),
-        },
+      const trackPoints = obs.groundTrack.map((c) => latLonToVec3(c[0], c[1], GLOBE_RADIUS + 0.002));
+      const trackGeo = new THREE.BufferGeometry().setFromPoints(trackPoints);
+      // Dashed line via line segments
+      const trackMat = new THREE.LineDashedMaterial({
+        color: 0x44cc88,
+        dashSize: 0.05,
+        gapSize: 0.03,
+        transparent: true,
+        opacity: 0.6,
       });
-      map.set("satellite-track-", satTrackEntity);
+      const trackLine = new THREE.Line(trackGeo, trackMat);
+      trackLine.computeLineDistances();
+      satGroup.add(trackLine);
     }
 
-    // Satellite swath rectangle
-    const swathHalfWidth = obs.swathWidth / 2 / 111000; // convert km to degrees approx
-    const swathHalfLength = obs.swathLength / 2 / 111000;
-    const swathCenterLat = obs.swathCenter[0];
-    const swathCenterLon = obs.swathCenter[1];
+    // Satellite position marker
+    const satPos = latLonToVec3(obs.swathCenter[0], obs.swathCenter[1], GLOBE_RADIUS + 0.5);
+    const satGeo = new THREE.OctahedronGeometry(0.03, 0);
+    const satMat = new THREE.MeshBasicMaterial({ color: 0x44cc88 });
+    const satMesh = new THREE.Mesh(satGeo, satMat);
+    satMesh.position.copy(satPos);
+    satGroup.add(satMesh);
 
-    // Create a rectangular swath footprint aligned with orbit direction
-    const swathAngle = Cesium.Math.toRadians(obs.orbitInclination > 90 ? 170 : 10);
+    // Sat-to-ground line
+    const groundPos = latLonToVec3(obs.swathCenter[0], obs.swathCenter[1], GLOBE_RADIUS + 0.005);
+    const satLineGeo = new THREE.BufferGeometry().setFromPoints([satPos, groundPos]);
+    const satLineMat = new THREE.LineDashedMaterial({
+      color: 0x44cc88,
+      dashSize: 0.04,
+      gapSize: 0.02,
+      transparent: true,
+      opacity: 0.3,
+    });
+    const satLine = new THREE.Line(satLineGeo, satLineMat);
+    satLine.computeLineDistances();
+    satGroup.add(satLine);
+
+    // Swath footprint (rectangle on ocean)
+    const swathHalfWidth = obs.swathWidth / 2 / 111000;
+    const swathHalfLength = obs.swathLength / 2 / 111000;
+    const swathAngle = (obs.orbitInclination > 90 ? 170 : 10) * (Math.PI / 180);
     const cosA = Math.cos(swathAngle);
     const sinA = Math.sin(swathAngle);
+    const scLat = obs.swathCenter[0];
+    const scLon = obs.swathCenter[1];
 
-    const corners: Cesium.Cartesian3[] = [
-      [swathCenterLat - swathHalfLength * cosA + swathHalfWidth * sinA,
-       swathCenterLon - swathHalfLength * sinA - swathHalfWidth * cosA],
-      [swathCenterLat - swathHalfLength * cosA - swathHalfWidth * sinA,
-       swathCenterLon - swathHalfLength * sinA + swathHalfWidth * cosA],
-      [swathCenterLat + swathHalfLength * cosA - swathHalfWidth * sinA,
-       swathCenterLon + swathHalfLength * sinA + swathHalfWidth * cosA],
-      [swathCenterLat + swathHalfLength * cosA + swathHalfWidth * sinA,
-       swathCenterLon + swathHalfLength * sinA - swathHalfWidth * cosA],
-    ].map((c) => Cesium.Cartesian3.fromDegrees(c[1], c[0]));
+    const swathCorners = [
+      [scLat - swathHalfLength * cosA + swathHalfWidth * sinA, scLon - swathHalfLength * sinA - swathHalfWidth * cosA],
+      [scLat - swathHalfLength * cosA - swathHalfWidth * sinA, scLon - swathHalfLength * sinA + swathHalfWidth * cosA],
+      [scLat + swathHalfLength * cosA - swathHalfWidth * sinA, scLon + swathHalfLength * sinA + swathHalfWidth * cosA],
+      [scLat + swathHalfLength * cosA + swathHalfWidth * sinA, scLon + swathHalfLength * sinA - swathHalfWidth * cosA],
+    ];
 
-    const swathEntity = entities.add({
-      id: "satellite-swath-rect",
-      polygon: {
-        hierarchy: new Cesium.PolygonHierarchy(corners),
-        material: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.06),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString("#44cc88").withAlpha(0.25),
-        outlineWidth: 1,
-        height: 5,
-      },
+    const swathVerts: THREE.Vector3[] = swathCorners.map((c) => latLonToVec3(c[0], c[1], GLOBE_RADIUS + 0.004));
+    const swathTriVerts: number[] = [];
+    const swathCentroid = new THREE.Vector3();
+    swathVerts.forEach((v) => swathCentroid.add(v));
+    swathCentroid.divideScalar(swathVerts.length);
+    for (let i = 0; i < swathVerts.length; i++) {
+      const next = (i + 1) % swathVerts.length;
+      swathCentroid.toArray(swathTriVerts, swathTriVerts.length);
+      swathVerts[i].toArray(swathTriVerts, swathTriVerts.length);
+      swathVerts[next].toArray(swathTriVerts, swathTriVerts.length);
+    }
+    const swathGeo = new THREE.BufferGeometry();
+    swathGeo.setAttribute("position", new THREE.Float32BufferAttribute(swathTriVerts, 3));
+    swathGeo.computeVertexNormals();
+    const swathMat = new THREE.MeshBasicMaterial({
+      color: 0x44cc88,
+      transparent: true,
+      opacity: 0.06,
+      side: THREE.DoubleSide,
+      depthWrite: false,
     });
-    map.set("satellite-swath-", swathEntity);
+    satGroup.add(new THREE.Mesh(swathGeo, swathMat));
 
-    // Satellite position
-    const satEntity = entities.add({
-      id: "satellite-position",
-      position: Cesium.Cartesian3.fromDegrees(
-        obs.swathCenter[1],
-        obs.swathCenter[0],
-        obs.orbitAltitude * 1000
-      ),
-      point: {
-        pixelSize: 12,
-        color: Cesium.Color.fromCssColorString("#44cc88"),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 2,
-      },
-      label: {
-        text: `${obs.satellite}\nPass: ${new Date(obs.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} UTC`,
-        font: "11px monospace",
-        fillColor: Cesium.Color.WHITE,
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 2,
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -20),
-        showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString("#0a0b10").withAlpha(0.8),
-      },
-    });
-    map.set("satellite-", satEntity);
+    // Swath outline
+    const swathOutlinePoints = [...swathVerts, swathVerts[0]];
+    const swathOutlineGeo = new THREE.BufferGeometry().setFromPoints(swathOutlinePoints);
+    const swathOutlineMat = new THREE.LineBasicMaterial({ color: 0x44cc88, transparent: true, opacity: 0.25 });
+    satGroup.add(new THREE.Line(swathOutlineGeo, swathOutlineMat));
 
-    // ── DRIFT PATH ───────────────────────────────────────────────
+    // ── DRIFT PATHS ─────────────────────────────────────────────
     if (DEMO_DRIFT.forward.length > 1) {
-      const driftPositions = DEMO_DRIFT.forward.map((p) =>
-        Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0])
-      );
-
-      const driftEntity = entities.add({
-        id: "drift-forward-path",
-        polyline: {
-          positions: driftPositions,
-          width: 2,
-          material: new Cesium.PolylineDashMaterialProperty({
-            color: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.5),
-            dashLength: 12,
-          }),
-        },
+      const driftPoints = DEMO_DRIFT.forward.map((p) => latLonToVec3(p.center[0], p.center[1], GLOBE_RADIUS + 0.006));
+      const driftGeo = new THREE.BufferGeometry().setFromPoints(driftPoints);
+      const driftMat = new THREE.LineDashedMaterial({
+        color: 0xf97316,
+        dashSize: 0.04,
+        gapSize: 0.02,
+        transparent: true,
+        opacity: 0.5,
       });
-      map.set("spill-polygon", driftEntity);
+      const driftLine = new THREE.Line(driftGeo, driftMat);
+      driftLine.computeLineDistances();
+      spillGroup.add(driftLine);
     }
 
-    // ── BACKTRACK PATH ───────────────────────────────────────────
     if (DEMO_DRIFT.backtrack.length > 1) {
-      const backtrackPositions = DEMO_DRIFT.backtrack.map((p) =>
-        Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0])
-      );
-
-      const backtrackEntity = entities.add({
-        id: "drift-backtrack-path",
-        polyline: {
-          positions: backtrackPositions,
-          width: 2,
-          material: new Cesium.PolylineDashMaterialProperty({
-            color: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.4),
-            dashLength: 10,
-          }),
-        },
+      const btPoints = DEMO_DRIFT.backtrack.map((p) => latLonToVec3(p.center[0], p.center[1], GLOBE_RADIUS + 0.006));
+      const btGeo = new THREE.BufferGeometry().setFromPoints(btPoints);
+      const btMat = new THREE.LineDashedMaterial({
+        color: 0xa78bfa,
+        dashSize: 0.03,
+        gapSize: 0.02,
+        transparent: true,
+        opacity: 0.4,
       });
-      map.set("spill-polygon", backtrackEntity);
+      const btLine = new THREE.Line(btGeo, btMat);
+      btLine.computeLineDistances();
+      spillGroup.add(btLine);
     }
 
-    // ── COASTLINE / BOUNDARY LINES ────────────────────────────────
-    // Simple lat/lon graticule visible when coastline layer is toggled
-    // (A real app would load GeoJSON coastline data; here we add a few reference lines)
-    for (let lat = 5; lat <= 20; lat += 5) {
-      const graticuleEntity = entities.add({
-        id: `coastline-lat-${lat}`,
-        polyline: {
-          positions: [
-            Cesium.Cartesian3.fromDegrees(80, lat),
-            Cesium.Cartesian3.fromDegrees(95, lat),
-          ],
-          width: 0.5,
-          material: Cesium.Color.fromCssColorString("#334155").withAlpha(0.3),
-        },
-        label: {
-          text: `${lat}°N`,
-          font: "9px monospace",
-          fillColor: Cesium.Color.fromCssColorString("#475569"),
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 1,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.CENTER,
-          horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
-          pixelOffset: new Cesium.Cartesian2(4, 0),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scale: 0.8,
-        },
-      });
-      map.set("coastline-", graticuleEntity);
+    // ── GRID LINES ───────────────────────────────────────────────
+    const gridGroup = groupMap.get("grid")!;
+    // Latitude lines
+    for (let lat = 0; lat <= 20; lat += 5) {
+      const pts: THREE.Vector3[] = [];
+      for (let lon = 80; lon <= 95; lon += 0.5) {
+        pts.push(latLonToVec3(lat, lon, GLOBE_RADIUS + 0.001));
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat = new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.25 });
+      gridGroup.add(new THREE.Line(geo, mat));
     }
-    for (let lon = 82; lon <= 94; lon += 3) {
-      const graticuleEntity = entities.add({
-        id: `coastline-lon-${lon}`,
-        polyline: {
-          positions: [
-            Cesium.Cartesian3.fromDegrees(lon, 5),
-            Cesium.Cartesian3.fromDegrees(lon, 20),
-          ],
-          width: 0.5,
-          material: Cesium.Color.fromCssColorString("#334155").withAlpha(0.3),
-        },
-        label: {
-          text: `${lon}°E`,
-          font: "9px monospace",
-          fillColor: Cesium.Color.fromCssColorString("#475569"),
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 1,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.TOP,
-          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-          pixelOffset: new Cesium.Cartesian2(0, 4),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scale: 0.8,
-        },
-      });
-      map.set("coastline-", graticuleEntity);
+    // Longitude lines
+    for (let lon = 80; lon <= 95; lon += 3) {
+      const pts: THREE.Vector3[] = [];
+      for (let lat = 0; lat <= 20; lat += 0.5) {
+        pts.push(latLonToVec3(lat, lon, GLOBE_RADIUS + 0.001));
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat = new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.25 });
+      gridGroup.add(new THREE.Line(geo, mat));
     }
 
+    // Store refs
+    sceneRef.current = scene;
+    rendererRef.current = renderer;
+    cameraRef.current = camera;
+    controlsRef.current = controls;
+
+    // ── Animation loop ───────────────────────────────────────────
+    const animate = () => {
+      animFrameRef.current = requestAnimationFrame(animate);
+      controls.update();
+
+      // Slowly rotate markers to keep them visible
+      vesselGroup.children.forEach((child) => {
+        if (child instanceof THREE.Group) {
+          child.lookAt(camera.position);
+        }
+      });
+      markerMesh.lookAt(camera.position);
+      satMesh.lookAt(camera.position);
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // ── Resize handler ───────────────────────────────────────────
+    const handleResize = () => {
+      if (!container) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(animFrameRef.current);
+      controls.dispose();
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+      sceneRef.current = null;
+      rendererRef.current = null;
+      cameraRef.current = null;
+      controlsRef.current = null;
+    };
   }, []);
 
   // ── Layer visibility toggle ────────────────────────────────────
   useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
+    const groupMap = groupMapRef.current;
     layers.forEach((layer) => {
-      const prefixes = LAYER_ENTITY_PREFIXES[layer.id];
-      if (!prefixes) return;
-
-      viewer.entities.values.forEach((entity) => {
-        if (!entity.id) return;
-        const id = entity.id as string;
-        const matches = prefixes.some((prefix) => id.startsWith(prefix));
-        if (matches) {
-          entity.show = layer.enabled;
-        }
-      });
+      const groupName = LAYER_GROUP_NAMES[layer.id];
+      const group = groupMap.get(groupName);
+      if (group) {
+        group.visible = layer.enabled;
+      }
     });
   }, [layers]);
 
   // ── Handle vessel selection ─────────────────────────────────────
   const handleVesselSelect = useCallback((vessel: AisVessel) => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
-    // Reset previously selected vessel
-    if (selectedVessel) {
-      const prevEntity = viewer.entities.getById(`vessel-${selectedVessel.mmsi}`);
-      if (prevEntity?.point) {
-        prevEntity.point.color = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString("#55aaff"));
-        prevEntity.point.outlineWidth = new Cesium.ConstantProperty(1.5);
-      }
-    }
-
     setSelectedVessel(vessel);
 
-    // Fly to vessel
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(vessel.lon, vessel.lat, 600000),
-      orientation: {
-        heading: Cesium.Math.toRadians(0),
-        pitch: Cesium.Math.toRadians(-45),
-        roll: 0,
-      },
-      duration: 1.5,
-    });
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
 
-    // Highlight vessel
-    const entity = viewer.entities.getById(`vessel-${vessel.mmsi}`);
-    if (entity?.point) {
-      entity.point.color = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString("#22d3ee"));
-      entity.point.outlineColor = new Cesium.ConstantProperty(Cesium.Color.WHITE);
-      entity.point.outlineWidth = new Cesium.ConstantProperty(3);
-    }
-  }, [selectedVessel]);
+    // Fly to vessel
+    const vesselPos = latLonToVec3(vessel.lat, vessel.lon, GLOBE_RADIUS * 1.5);
+    const vesselTarget = latLonToVec3(vessel.lat, vessel.lon, 0);
+
+    // Smooth camera animation
+    const startPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const duration = 1500;
+    const startTime = Date.now();
+
+    const animateCamera = () => {
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+      camera.position.lerpVectors(startPos, vesselPos, ease);
+      controls.target.lerpVectors(startTarget, vesselTarget, ease);
+
+      if (t < 1) requestAnimationFrame(animateCamera);
+    };
+    animateCamera();
+  }, []);
 
   // ── Fly to spill ──────────────────────────────────────────────
   const flyToSpill = useCallback(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
 
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(
-        incident.polygon.center[1],
-        incident.polygon.center[0],
-        1200000
-      ),
-      orientation: {
-        heading: Cesium.Math.toRadians(10),
-        pitch: Cesium.Math.toRadians(-35),
-        roll: 0,
-      },
-      duration: 1.5,
-    });
+    const spillPos = latLonToVec3(incident.polygon.center[0], incident.polygon.center[1], GLOBE_RADIUS * 1.8);
+    const spillTarget = latLonToVec3(incident.polygon.center[0], incident.polygon.center[1], 0);
+
+    const startPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const duration = 1500;
+    const startTime = Date.now();
+
+    const animateCamera = () => {
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+      camera.position.lerpVectors(startPos, spillPos, ease);
+      controls.target.lerpVectors(startTarget, spillTarget, ease);
+
+      if (t < 1) requestAnimationFrame(animateCamera);
+    };
+    animateCamera();
   }, [incident]);
 
   // ── Toggle layer ──────────────────────────────────────────────
@@ -654,7 +637,13 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   useEffect(() => {
     if (!isPlaying) return;
     const iv = setInterval(() => {
-      setTimeStep((p) => { if (p >= timeSteps.length - 1) { setIsPlaying(false); return p; } return p + 1; });
+      setTimeStep((p) => {
+        if (p >= timeSteps.length - 1) {
+          setIsPlaying(false);
+          return p;
+        }
+        return p + 1;
+      });
     }, 1000 / playSpeed);
     return () => clearInterval(iv);
   }, [isPlaying, playSpeed, timeSteps.length]);
@@ -762,30 +751,9 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           </div>
         </aside>
 
-        {/* ─── CESIUM GLOBE ──────────────────────────────────── */}
+        {/* ─── THREE.JS GLOBE ──────────────────────────────────── */}
         <main className="flex-1 relative">
-          <div ref={cesiumContainerRef} className="absolute inset-0 cesium-container" />
-
-          {/* Error fallback */}
-          {viewerError && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#020508]">
-              <div className="text-center max-w-md p-6">
-                <div className="flex justify-center mb-4">
-                  <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-700 bg-zinc-900">
-                    <Radar className="size-8 text-zinc-500" />
-                  </div>
-                </div>
-                <h2 className="text-lg font-semibold text-zinc-200 mb-2">3D Globe Unavailable</h2>
-                <p className="text-xs text-zinc-500 mb-4 leading-relaxed">{viewerError}</p>
-                <p className="text-[10px] text-zinc-600 mb-4">
-                  The 3D Intelligence view requires WebGL support. You can still access the main dashboard, SAR analysis, and all other features from the command center.
-                </p>
-                <button onClick={onBack} className="inline-flex items-center gap-2 rounded border border-zinc-700 bg-zinc-800/50 px-4 py-2 text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
-                  <ArrowLeft className="size-3" /> Return to Dashboard
-                </button>
-              </div>
-            </div>
-          )}
+          <div ref={containerRef} className="absolute inset-0" style={{ width: "100%", height: "100%" }} />
 
           {/* Compass nav */}
           <div className="absolute bottom-20 left-6 z-10">
