@@ -180,7 +180,35 @@
   height: 100% !important;
 }
 
-/* Three.js renderer */
-.globe-canvas canvas:focus {
-  outline: none;
+/* Leaflet dark tooltip overrides */
+.maris-tooltip {
+  background: #0a0b10ee;
+  border: 1px solid #27272a;
+  color: #d4d4d8;
+  font-family: monospace;
+  font-size: 10px;
+  border-radius: 4px;
+  padding: 6px 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
+.maris-tooltip::before {
+  border-top-color: #27272a;
+}
+
+.maris-tooltip .leaflet-tooltip-content {
+  margin: 0;
+}
+
+/* Leaflet dark map overrides */
+.leaflet-container {
+  background: #020508;
+}
+
+.leaflet-control-attribution {
+  display: none !important;
+}
+
+.leaflet-control-zoom {
+  display: none !important;
 }
