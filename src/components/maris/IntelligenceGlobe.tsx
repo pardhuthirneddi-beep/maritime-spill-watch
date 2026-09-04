@@ -9,18 +9,14 @@ import { PolygonLayer, PathLayer, ScatterplotLayer, IconLayer, TextLayer } from 
 import {
   ArrowLeft,
   ChevronRight,
-  Compass,
   Crosshair,
   Filter,
   Layers,
   Navigation,
   Pause,
   Play,
-  Radar,
   Search,
   Ship,
-  Target,
-  Wind,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -617,16 +613,8 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ─── LEFT PANEL ────────────────────────────────────── */}
-        <aside className="flex h-full z-20">
-          <div className="w-10 flex flex-col items-center gap-1 py-2 border-r border-zinc-800/50 bg-[#060a10]/95">
-            {[Search, Ship, Layers, Target, Radar, Compass, Wind].map((Icon, i) => (
-              <button key={i} className={cn("flex size-7 items-center justify-center rounded transition-colors", i === 1 ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800")}>
-                <Icon className="size-3.5" />
-              </button>
-            ))}
-          </div>
-
-          <div className="w-56 border-r border-zinc-800/50 bg-[#060a10]/95 flex flex-col overflow-hidden">
+        <aside className="h-full z-20">
+          <div className="w-56 border-r border-zinc-800/50 bg-[#060a10]/95 flex flex-col overflow-hidden h-full">
             {/* Vessel list */}
             <div className="px-3 py-2.5 border-b border-zinc-800/50">
               <h2 className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Vessels</h2>
