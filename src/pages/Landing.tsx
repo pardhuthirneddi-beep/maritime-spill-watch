@@ -101,13 +101,6 @@ export default function Landing() {
                 <ScanEye className="size-3.5" />
                 SAR Analysis
               </button>
-              <button
-                onClick={() => navigate("/3d")}
-                className="inline-flex items-center gap-2 rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-[11px] font-medium text-zinc-300 hover:border-zinc-500 transition-colors"
-              >
-                <Globe className="size-3.5" />
-                3D Intelligence
-              </button>
             </div>
             <div className="mt-3">
               <span className="text-[9px] text-zinc-600">

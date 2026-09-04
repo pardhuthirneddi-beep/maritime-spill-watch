@@ -9,7 +9,6 @@ import {
   Compass,
   Crosshair,
   FileText,
-  Globe,
   Layers,
   Radar,
   ScanEye,
@@ -48,7 +47,6 @@ const NAV_ITEMS: {
 
 const EXTERNAL_VIEWS = [
   { path: "/sar", label: "SAR Analysis", icon: ScanEye, desc: "Scientific imagery viewer" },
-  { path: "/3d", label: "3D Intelligence", icon: Globe, desc: "Geospatial globe" },
 ];
 
 export default function Sidebar({
