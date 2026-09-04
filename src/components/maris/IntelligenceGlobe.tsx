@@ -82,6 +82,7 @@ interface IntelligenceGlobeProps {
 export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const viewContainerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
+  const registryRef = useRef<Record<string, any[]>>({});
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -124,6 +125,13 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   });
 
   const affectedVessels = DEMO_VESSELS.slice(0, 3);
+
+  // Register a Cesium entity under a 3D layer id so layer toggles work
+  const registerEntity = useCallback((layerId: string, entity: any) => {
+    if (!entity) return;
+    if (!registryRef.current[layerId]) registryRef.current[layerId] = [];
+    registryRef.current[layerId].push(entity);
+  }, []);
 
   // ── Initialize Cesium Viewer ─────────────────────────────────
   useEffect(() => {
@@ -212,6 +220,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         addVesselTracks(Cesium, viewer);
         addSatellitePass(Cesium, viewer);
         addMaritimeGrid(Cesium, viewer);
+        addDriftPaths(Cesium, viewer);
 
         viewerRef.current = viewer;
         setIsLoading(false);
@@ -258,7 +267,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           height: 1,
         },
       });
-      glowPolygon.properties = { layer: "spill-glow" };
+      registerEntity("globe_spill", glowPolygon);
 
       // Main spill polygon
       const spillPolygon = viewer.entities.add({
@@ -271,13 +280,13 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           height: 2,
         },
       });
-      spillPolygon.properties = { layer: "spill-fill" };
+      registerEntity("globe_spill", spillPolygon);
 
       // Center marker
       const centerLon = incident.polygon.center[1];
       const centerLat = incident.polygon.center[0];
 
-      viewer.entities.add({
+      const centerPoint = viewer.entities.add({
         position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, 100),
         point: {
           pixelSize: 8,
@@ -287,6 +296,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         },
       });
+      registerEntity("globe_spill", centerPoint);
 
       // Spill label
       const labelEntity = viewer.entities.add({
@@ -304,7 +314,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           backgroundColor: new Cesium.Color(0.02, 0.02, 0.03, 0.85),
         },
       });
-      labelEntity.properties = { layer: "spill-label" };
+      registerEntity("globe_spill", labelEntity);
 
       // Spill detail label
       const detailLabel = viewer.entities.add({
@@ -322,9 +332,9 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           backgroundColor: new Cesium.Color(0.02, 0.02, 0.03, 0.85),
         },
       });
-      detailLabel.properties = { layer: "spill-label-sub" };
+      registerEntity("globe_spill", detailLabel);
     },
-    [incident]
+    [incident, registerEntity]
   );
 
   // ── Add Vessels ──────────────────────────────────────────────
@@ -353,10 +363,10 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
             backgroundColor: new Cesium.Color(0.02, 0.02, 0.03, 0.85),
           },
         });
-        entity.properties = { layer: `vessel-${vessel.mmsi}`, mmsi: vessel.mmsi };
+        registerEntity("globe_vessels", entity);
       });
     },
-    []
+    [registerEntity]
   );
 
   // ── Add Vessel Tracks ────────────────────────────────────────
@@ -376,11 +386,11 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
               clampToGround: true,
             },
           });
-          polyline.properties = { layer: `track-${vessel.mmsi}` };
+          registerEntity("globe_tracks", polyline);
         }
       });
     },
-    []
+    [registerEntity]
   );
 
   // ── Add Satellite Pass ───────────────────────────────────────
@@ -406,7 +416,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
             height: 100,
           },
         });
-        track.properties = { layer: "sat-ground-track" };
+        registerEntity("globe_satellite", track);
       }
 
       // Satellite position marker
@@ -429,7 +439,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           lineHeight: 16,
         },
       });
-      satEntity.properties = { layer: "satellite-label" };
+      registerEntity("globe_satellite", satEntity);
 
       // Swath footprint
       const swathHalfWidth = obs.swathWidth / 2 / 111000;
@@ -454,17 +464,14 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
           ),
           material: new Cesium.Color(0.27, 0.8, 0.53, 0.06),
           outline: true,
-          outlineColor: new Cesium.PolylineDashMaterialProperty({
-            color: new Cesium.Color(0.27, 0.8, 0.53, 0.25),
-            dashLength: 8,
-          }),
+          outlineColor: new Cesium.Color(0.27, 0.8, 0.53, 0.25),
           outlineWidth: 1,
           height: 50,
         },
       });
-      swath.properties = { layer: "sat-swath" };
+      registerEntity("globe_satellite", swath);
     },
-    []
+    [registerEntity]
   );
 
   // ── Add Maritime Grid ────────────────────────────────────────
@@ -483,7 +490,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       }
       gridLines.forEach((pts) => {
         const positions = pts.map((p) => Cesium.Cartesian3.fromDegrees(p[0], p[1], 10));
-        viewer.entities.add({
+        const line = viewer.entities.add({
           polyline: {
             positions,
             width: 0.5,
@@ -492,9 +499,77 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
             height: 10,
           },
         });
+        registerEntity("globe_grid", line);
       });
     },
-    []
+    [registerEntity]
+  );
+
+  // ── Add Drift Paths (forward + backtrack) ────────────────────
+  const addDriftPaths = useCallback(
+    (Cesium: any, viewer: any) => {
+      // Forward drift path
+      if (DEMO_DRIFT.forward.length > 1) {
+        const positions = DEMO_DRIFT.forward.map((p) =>
+          Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0], 20)
+        );
+        const fwd = viewer.entities.add({
+          polyline: {
+            positions,
+            width: 2,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: new Cesium.Color(0.98, 0.45, 0.09, 0.6),
+              dashLength: 12,
+            }),
+            clampToGround: false,
+            height: 20,
+          },
+        });
+        registerEntity("globe_spill", fwd);
+
+        // Time labels on forward drift points
+        DEMO_DRIFT.forward.forEach((point, i) => {
+          if (i === 0) return;
+          const lbl = viewer.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(point.center[1], point.center[0], 30),
+            label: {
+              text: point.time,
+              font: "9px monospace",
+              fillColor: new Cesium.Color(0.98, 0.45, 0.09, 0.6),
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 2,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, 10),
+              showBackground: true,
+              backgroundColor: new Cesium.Color(0.02, 0.02, 0.03, 0.7),
+            },
+          });
+          registerEntity("globe_spill", lbl);
+        });
+      }
+
+      // Backtrack drift path
+      if (DEMO_DRIFT.backtrack.length > 1) {
+        const positions = DEMO_DRIFT.backtrack.map((p) =>
+          Cesium.Cartesian3.fromDegrees(p.center[1], p.center[0], 20)
+        );
+        const bt = viewer.entities.add({
+          polyline: {
+            positions,
+            width: 1.5,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: new Cesium.Color(0.65, 0.55, 0.98, 0.45),
+              dashLength: 8,
+            }),
+            clampToGround: false,
+            height: 20,
+          },
+        });
+        registerEntity("globe_spill", bt);
+      }
+    },
+    [registerEntity]
   );
 
   // ── Create ship canvas icon ──────────────────────────────────
@@ -582,6 +657,20 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       prev.map((l) => (l.id === id ? { ...l, enabled: !l.enabled } : l))
     );
   }, []);
+
+  // ── Sync entity visibility with layer toggles ────────────────
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    const enabled = (id: Globe3dLayerId) =>
+      layers.find((l) => l.id === id)?.enabled ?? true;
+    Object.entries(registryRef.current).forEach(([layerId, entities]) => {
+      const isOn = enabled(layerId as Globe3dLayerId);
+      entities.forEach((e) => {
+        if (e && typeof e.show === "boolean") e.show = isOn;
+      });
+    });
+  }, [layers]);
 
   // ── Playback ──────────────────────────────────────────────────
   useEffect(() => {
