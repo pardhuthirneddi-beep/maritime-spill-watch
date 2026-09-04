@@ -59,6 +59,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const cesiumContainerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const entityMapRef = useRef<Map<string, Cesium.Entity>>(new Map());
+  const [viewerError, setViewerError] = useState<string | null>(null);
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [vesselFilter, setVesselFilter] = useState<"all" | "near" | "watch">("all");
@@ -104,69 +105,82 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   useEffect(() => {
     if (!cesiumContainerRef.current || viewerRef.current) return;
 
-    const viewer = new Cesium.Viewer(cesiumContainerRef.current, {
-      baseLayerPicker: false,
-      geocoder: false,
-      homeButton: false,
-      sceneModePicker: false,
-      selectionIndicator: false,
-      navigationHelpButton: false,
-      animation: false,
-      timeline: false,
-      fullscreenButton: false,
-      vrButton: false,
-      infoBox: false,
-      shadows: false,
-      shouldAnimate: true,
-    });
+    try {
+      // Check WebGL support
+      const canvas = document.createElement("canvas");
+      const gl = canvas.getContext("webgl") || canvas.getContext("webgl2");
+      if (!gl) {
+        setViewerError("WebGL is not supported in this environment. The 3D globe requires WebGL to render.");
+        return;
+      }
 
-    // ── Dark Carto basemap ────────────────────────────────────────
-    viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(
-      new Cesium.UrlTemplateImageryProvider({
-        url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-        subdomains: ["a", "b", "c", "d"],
-        maximumLevel: 18,
-        credit: new Cesium.Credit("© CARTO © OpenStreetMap contributors"),
-      })
-    );
+      const viewer = new Cesium.Viewer(cesiumContainerRef.current, {
+        baseLayerPicker: false,
+        geocoder: false,
+        homeButton: false,
+        sceneModePicker: false,
+        selectionIndicator: false,
+        navigationHelpButton: false,
+        animation: false,
+        timeline: false,
+        fullscreenButton: false,
+        vrButton: false,
+        infoBox: false,
+        shadows: false,
+        shouldAnimate: true,
+      });
 
-    // ── Dark scene styling ────────────────────────────────────────
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020508");
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#071320");
+      // ── Dark Carto basemap ────────────────────────────────────────
+      viewer.imageryLayers.removeAll();
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+          subdomains: ["a", "b", "c", "d"],
+          maximumLevel: 18,
+          credit: new Cesium.Credit("© CARTO © OpenStreetMap contributors"),
+        })
+      );
 
-    // Atmosphere
-    if (viewer.scene.skyAtmosphere) {
-      viewer.scene.skyAtmosphere.show = true;
+      // ── Dark scene styling ────────────────────────────────────────
+      viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020508");
+      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#071320");
+
+      // Atmosphere
+      if (viewer.scene.skyAtmosphere) {
+        viewer.scene.skyAtmosphere.show = true;
+      }
+      if (viewer.scene.skyBox) {
+        viewer.scene.skyBox.show = false;
+      }
+
+      // Fog for depth/atmosphere
+      viewer.scene.fog.enabled = true;
+      viewer.scene.fog.density = 0.00015;
+      viewer.scene.fog.screenSpaceErrorFactor = 2.0;
+
+      // Globe lighting
+      viewer.scene.globe.enableLighting = false;
+
+      // Smooth camera near/far for ocean viewing
+      viewer.scene.camera.frustum.near = 100.0;
+      viewer.scene.camera.frustum.far = 20000000.0;
+
+      // ── Initial camera — orbital view of Bay of Bengal ────────────
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(87.0, 12.0, 2800000),
+        orientation: {
+          heading: Cesium.Math.toRadians(10),
+          pitch: Cesium.Math.toRadians(-35),
+          roll: 0,
+        },
+        duration: 2.5,
+      });
+
+      viewerRef.current = viewer;
+    } catch (err) {
+      console.error("[MARIS] Cesium viewer init failed:", err);
+      setViewerError(err instanceof Error ? err.message : "Failed to initialize 3D globe.");
     }
-    if (viewer.scene.skyBox) {
-      viewer.scene.skyBox.show = false;
-    }
-
-    // Fog for depth/atmosphere
-    viewer.scene.fog.enabled = true;
-    viewer.scene.fog.density = 0.00015;
-    viewer.scene.fog.screenSpaceErrorFactor = 2.0;
-
-    // Globe lighting — darken the night side
-    viewer.scene.globe.enableLighting = false;
-
-    // Smooth camera near/far for ocean viewing
-    viewer.scene.camera.frustum.near = 100.0;
-    viewer.scene.camera.frustum.far = 20000000.0;
-
-    // ── Initial camera — orbital view of Bay of Bengal ────────────
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(87.0, 12.0, 2800000),
-      orientation: {
-        heading: Cesium.Math.toRadians(10),
-        pitch: Cesium.Math.toRadians(-35),
-        roll: 0,
-      },
-      duration: 2.5,
-    });
-
-    viewerRef.current = viewer;
 
     return () => {
       if (viewerRef.current) {
@@ -751,6 +765,27 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
         {/* ─── CESIUM GLOBE ──────────────────────────────────── */}
         <main className="flex-1 relative">
           <div ref={cesiumContainerRef} className="absolute inset-0 cesium-container" />
+
+          {/* Error fallback */}
+          {viewerError && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#020508]">
+              <div className="text-center max-w-md p-6">
+                <div className="flex justify-center mb-4">
+                  <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-700 bg-zinc-900">
+                    <Radar className="size-8 text-zinc-500" />
+                  </div>
+                </div>
+                <h2 className="text-lg font-semibold text-zinc-200 mb-2">3D Globe Unavailable</h2>
+                <p className="text-xs text-zinc-500 mb-4 leading-relaxed">{viewerError}</p>
+                <p className="text-[10px] text-zinc-600 mb-4">
+                  The 3D Intelligence view requires WebGL support. You can still access the main dashboard, SAR analysis, and all other features from the command center.
+                </p>
+                <button onClick={onBack} className="inline-flex items-center gap-2 rounded border border-zinc-700 bg-zinc-800/50 px-4 py-2 text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+                  <ArrowLeft className="size-3" /> Return to Dashboard
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Compass nav */}
           <div className="absolute bottom-20 left-6 z-10">

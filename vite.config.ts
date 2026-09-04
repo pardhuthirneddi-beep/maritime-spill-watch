@@ -110,6 +110,7 @@ export default defineConfig({
       'react-router',
       '@convex-dev/auth/react',
       'framer-motion',
+      'cesium',
     ],
   },
   // Performance hints
