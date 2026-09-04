@@ -28,5 +28,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "vly-toolbar-readonly.tsx", "src/types"]
+  "include": ["src", "vly-toolbar-readonly.tsx", "src/types"],
+  "exclude": ["src/components/maris/IntelligenceGlobe.tsx"]
 }
