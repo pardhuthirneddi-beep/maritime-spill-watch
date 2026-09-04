@@ -472,37 +472,11 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          "carto-dark": {
-            type: "raster",
-            tiles: [
-              `https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-              `https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-              `https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-              `https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-            ],
-            tileSize: 256,
-            attribution: "© CARTO © OpenStreetMap contributors",
-          },
-        },
-        layers: [
-          {
-            id: "carto-dark-layer",
-            type: "raster",
-            source: "carto-dark",
-            minzoom: 0,
-            maxzoom: 18,
-          },
-        ],
-        glyphs: undefined,
-      },
+      style: `https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json?key=${CARTO_API_KEY}`,
       center: [86.97, 12.05],
       zoom: 3.8,
       pitch: 42,
       bearing: -15,
-
       attributionControl: false,
     });
 
@@ -510,6 +484,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
 
     // Wait for style to fully load before setting projection and adding deck.gl overlay
     const onStyleLoad = () => {
+      map.resize();
       map.setProjection({ type: "globe" });
       const deckOverlay = new MapboxOverlay({
         interleaved: false,
