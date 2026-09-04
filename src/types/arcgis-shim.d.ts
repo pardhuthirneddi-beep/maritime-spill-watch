@@ -1,5 +1,2 @@
-// Prevent tsc from scanning the massive @arcgis/core package
-declare module "@arcgis/core/*" {
-  const value: any;
-  export default value;
-}
+// Legacy shim — @arcgis/core has been removed from the project.
+// This file is kept empty to avoid breaking any stale imports during transition.
