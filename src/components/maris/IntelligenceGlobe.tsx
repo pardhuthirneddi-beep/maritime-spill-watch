@@ -510,13 +510,11 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       attributionControl: false,
     });
 
-    // Set globe projection
-    map.setProjection({ type: "globe" });
-
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
 
-    // Wait for style to fully load before adding deck.gl overlay
+    // Wait for style to fully load before setting projection and adding deck.gl overlay
     const onStyleLoad = () => {
+      map.setProjection({ type: "globe" });
       const deckOverlay = new MapboxOverlay({
         interleaved: false,
         layers: [],
