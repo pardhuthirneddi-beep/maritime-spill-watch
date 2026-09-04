@@ -188,7 +188,7 @@ export default function Dashboard() {
   const hasData = state.incident !== null;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="fixed inset-0 flex flex-col bg-[#050a12] text-zinc-100 overflow-hidden">
       {/* Header */}
       <Header
         incident={state.incident}
@@ -224,10 +224,10 @@ export default function Dashboard() {
 
           {/* Pre-investigation overlay */}
           {!hasData && !state.isAnalyzing && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-950/70 backdrop-blur-sm">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#050a12]/70 backdrop-blur-sm">
               <div className="text-center max-w-md">
                 <div className="flex justify-center mb-4">
-                  <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900">
+                  <div className="flex size-16 items-center justify-center rounded-2xl border border-sky-200/10 bg-zinc-900">
                     <svg
                       viewBox="0 0 24 24"
                       className="size-8 text-orange-400/60"
@@ -272,7 +272,7 @@ export default function Dashboard() {
 
           {/* Analysis overlay */}
           {state.isAnalyzing && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-950/50 backdrop-blur-sm">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#050a12]/50 backdrop-blur-sm">
               <div className="text-center">
                 <div className="flex justify-center mb-3">
                   <div className="size-10 rounded-full border-2 border-orange-500/30 border-t-orange-500 animate-spin" />
@@ -289,7 +289,7 @@ export default function Dashboard() {
 
           {/* Map legend */}
           {hasData && (
-            <div className="absolute bottom-3 left-3 z-10 rounded border border-zinc-800 bg-zinc-950/90 px-2 py-1.5 text-[8px] text-zinc-500 space-y-0.5">
+            <div className="absolute bottom-3 left-3 z-10 rounded border border-sky-200/10 bg-[#050a12]/90 px-2 py-1.5 text-[8px] text-zinc-500 space-y-0.5">
               <div className="flex items-center gap-1.5">
                 <div className="size-2 rounded-sm bg-orange-500/50 border border-orange-500" />
                 Oil Spill Polygon

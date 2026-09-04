@@ -322,7 +322,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
   return (
     <div className="fixed inset-0 flex flex-col bg-[#08090c] text-zinc-100 overflow-hidden">
       {/* ─── TOP BAR ─────────────────────────────────────────────── */}
-      <header className="flex h-10 items-center justify-between border-b border-zinc-800/60 bg-[#0a0b10] px-4 z-20">
+      <header className="flex h-10 items-center justify-between border-b border-sky-200/10/60 bg-[#0a0b10] px-4 z-20">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
@@ -343,7 +343,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
         <div className="flex items-center gap-2">
           {/* Zoom controls */}
-          <div className="flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-900/50">
+          <div className="flex items-center gap-0.5 rounded border border-sky-200/10 bg-zinc-900/50">
             <button onClick={handleZoomOut} className="p-1 text-zinc-500 hover:text-zinc-300">
               <ZoomOut className="size-3" />
             </button>
@@ -374,9 +374,9 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* ─── LEFT SIDEBAR — SCENE METADATA ────────────────────── */}
-        <aside className="w-72 border-r border-zinc-800/60 bg-[#0a0b10] overflow-y-auto flex-shrink-0">
+        <aside className="w-72 border-r border-sky-200/10/60 bg-[#0a0b10] overflow-y-auto flex-shrink-0">
           {/* Scene Info */}
-          <div className="p-3 border-b border-zinc-800/60">
+          <div className="p-3 border-b border-sky-200/10/60">
             <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
               Scene Metadata
             </h3>
@@ -394,7 +394,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           </div>
 
           {/* Detection Summary */}
-          <div className="p-3 border-b border-zinc-800/60">
+          <div className="p-3 border-b border-sky-200/10/60">
             <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
               Detection Summary
             </h3>
@@ -408,7 +408,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           </div>
 
           {/* Analysis Pipeline */}
-          <div className="p-3 border-b border-zinc-800/60">
+          <div className="p-3 border-b border-sky-200/10/60">
             <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
               Processing Pipeline
             </h3>
@@ -425,7 +425,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           </div>
 
           {/* False Positive Screening */}
-          <div className="p-3 border-b border-zinc-800/60">
+          <div className="p-3 border-b border-sky-200/10/60">
             <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
               False Positive Screening
             </h3>
@@ -441,11 +441,11 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
           {/* Selected Detection Detail */}
           {selectedDetection && (
-            <div className="p-3 border-b border-zinc-800/60">
+            <div className="p-3 border-b border-sky-200/10/60">
               <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
                 Detection Detail
               </h3>
-              <div className="rounded border border-zinc-800 bg-zinc-900/30 p-2">
+              <div className="rounded border border-sky-200/10 bg-zinc-900/30 p-2">
                 <div className="text-[10px] font-semibold text-zinc-200 mb-1">
                   {selectedDetection.label}
                 </div>
@@ -498,7 +498,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
           {/* Coordinate readout */}
           <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded border border-zinc-800/80 bg-[#0a0b10]/90 px-2 py-1">
+            <div className="flex items-center gap-1.5 rounded border border-sky-200/10/80 bg-[#0a0b10]/90 px-2 py-1">
               <Crosshair className="size-2.5 text-zinc-600" />
               <span className="text-[9px] font-mono text-zinc-400">{mouseCoords}</span>
             </div>
@@ -506,7 +506,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
           {/* Image info overlay */}
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-            <div className="rounded border border-zinc-800/80 bg-[#0a0b10]/90 px-2 py-1">
+            <div className="rounded border border-sky-200/10/80 bg-[#0a0b10]/90 px-2 py-1">
               <span className="text-[8px] text-zinc-500">
                 {scene.satellite} · {scene.polarization} · {scene.resolution}m · {scene.imageWidth}×{scene.imageHeight}
               </span>
@@ -515,7 +515,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
           {/* Scale bar */}
           <div className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5">
-            <div className="flex items-center gap-0.5 rounded border border-zinc-800/80 bg-[#0a0b10]/90 px-2 py-1">
+            <div className="flex items-center gap-0.5 rounded border border-sky-200/10/80 bg-[#0a0b10]/90 px-2 py-1">
               <div className="w-12 h-px bg-zinc-400" />
               <span className="text-[8px] font-mono text-zinc-500">
                 {Math.round(10 / zoom * 5)} km
@@ -525,7 +525,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
           {/* Layer controls overlay */}
           <div className="absolute top-3 right-3 z-10">
-            <div className="rounded border border-zinc-800/80 bg-[#0a0b10]/90 p-2 space-y-1.5">
+            <div className="rounded border border-sky-200/10/80 bg-[#0a0b10]/90 p-2 space-y-1.5">
               <button
                 onClick={() => setShowOverlay(!showOverlay)}
                 className={cn(
@@ -564,7 +564,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
 
           {/* Detection legend */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10">
-            <div className="flex items-center gap-3 rounded border border-zinc-800/80 bg-[#0a0b10]/90 px-3 py-1.5">
+            <div className="flex items-center gap-3 rounded border border-sky-200/10/80 bg-[#0a0b10]/90 px-3 py-1.5">
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-0.5 bg-orange-500 border border-dashed border-orange-500" />
                 <span className="text-[8px] text-zinc-500">Possible Oil Slick</span>
@@ -582,8 +582,8 @@ export default function SarViewer({ onBack }: SarViewerProps) {
         </main>
 
         {/* ─── RIGHT PANEL — DETECTION LIST ──────────────────────── */}
-        <aside className="w-64 border-l border-zinc-800/60 bg-[#0a0b10] overflow-y-auto flex-shrink-0">
-          <div className="p-3 border-b border-zinc-800/60">
+        <aside className="w-64 border-l border-sky-200/10/60 bg-[#0a0b10] overflow-y-auto flex-shrink-0">
+          <div className="p-3 border-b border-sky-200/10/60">
             <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">
               Detected Candidates
             </h3>
@@ -598,7 +598,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                   "w-full text-left rounded border p-2 transition-colors",
                   selectedDetection?.id === det.id
                     ? "border-orange-500/40 bg-orange-500/5"
-                    : "border-zinc-800/60 bg-zinc-900/20 hover:border-zinc-700"
+                    : "border-sky-200/10/60 bg-zinc-900/20 hover:border-zinc-700"
                 )}
               >
                 <div className="flex items-center justify-between mb-0.5">
@@ -632,7 +632,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           </div>
 
           {/* Confidence factors for primary */}
-          <div className="p-3 border-t border-zinc-800/60">
+          <div className="p-3 border-t border-sky-200/10/60">
             <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
               Confidence Factors
             </h3>
@@ -647,7 +647,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           </div>
 
           {/* Coordinates */}
-          <div className="p-3 border-t border-zinc-800/60">
+          <div className="p-3 border-t border-sky-200/10/60">
             <h3 className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
               Geographic Bounds
             </h3>
@@ -659,7 +659,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           </div>
 
           {/* Data source */}
-          <div className="p-3 border-t border-zinc-800/60">
+          <div className="p-3 border-t border-sky-200/10/60">
             <div className="text-[8px] text-zinc-600 leading-relaxed">
               {scene.dataSource}
             </div>

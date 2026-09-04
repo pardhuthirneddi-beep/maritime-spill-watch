@@ -42,74 +42,74 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* CHANGE VALUES FOR THEME */
+/* CHANGE VALUES FOR THEME — Naval command-center: deep navy, signal amber, instrument teal */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --radius: 0.375rem;
+  --background: oklch(0.98 0.005 240);
+  --foreground: oklch(0.18 0.03 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.18 0.03 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.18 0.03 250);
+  --primary: oklch(0.32 0.08 255);
+  --primary-foreground: oklch(0.98 0.005 240);
+  --secondary: oklch(0.94 0.012 240);
+  --secondary-foreground: oklch(0.32 0.08 255);
+  --muted: oklch(0.94 0.012 240);
+  --muted-foreground: oklch(0.45 0.03 250);
+  --accent: oklch(0.94 0.02 235);
+  --accent-foreground: oklch(0.32 0.08 255);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --border: oklch(0.88 0.015 245);
+  --input: oklch(0.88 0.015 245);
+  --ring: oklch(0.55 0.08 250);
+  --chart-1: oklch(0.55 0.12 250);
+  --chart-2: oklch(0.72 0.14 75);
+  --chart-3: oklch(0.65 0.1 210);
+  --chart-4: oklch(0.45 0.14 255);
+  --chart-5: oklch(0.6 0.15 30);
+  --sidebar: oklch(0.96 0.01 240);
+  --sidebar-foreground: oklch(0.18 0.03 250);
+  --sidebar-primary: oklch(0.32 0.08 255);
+  --sidebar-primary-foreground: oklch(0.98 0.005 240);
+  --sidebar-accent: oklch(0.92 0.02 240);
+  --sidebar-accent-foreground: oklch(0.32 0.08 255);
+  --sidebar-border: oklch(0.88 0.015 245);
+  --sidebar-ring: oklch(0.55 0.08 250);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.17 0.025 255);
+  --foreground: oklch(0.93 0.01 240);
+  --card: oklch(0.21 0.03 255);
+  --card-foreground: oklch(0.93 0.01 240);
+  --popover: oklch(0.21 0.03 255);
+  --popover-foreground: oklch(0.93 0.01 240);
+  --primary: oklch(0.78 0.09 240);
+  --primary-foreground: oklch(0.17 0.025 255);
+  --secondary: oklch(0.26 0.035 255);
+  --secondary-foreground: oklch(0.93 0.01 240);
+  --muted: oklch(0.26 0.035 255);
+  --muted-foreground: oklch(0.68 0.02 245);
+  --accent: oklch(0.28 0.045 250);
+  --accent-foreground: oklch(0.93 0.01 240);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.6 0.08 240);
+  --chart-1: oklch(0.78 0.09 240);
+  --chart-2: oklch(0.8 0.13 80);
+  --chart-3: oklch(0.75 0.1 210);
+  --chart-4: oklch(0.65 0.12 255);
+  --chart-5: oklch(0.7 0.15 30);
+  --sidebar: oklch(0.19 0.03 255);
+  --sidebar-foreground: oklch(0.93 0.01 240);
+  --sidebar-primary: oklch(0.78 0.09 240);
+  --sidebar-primary-foreground: oklch(0.17 0.025 255);
+  --sidebar-accent: oklch(0.27 0.04 255);
+  --sidebar-accent-foreground: oklch(0.93 0.01 240);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.6 0.08 240);
 }
 
 @layer base {
@@ -166,8 +166,6 @@
   scroll-behavior: smooth;
 }
 
-
-
 /* Leaflet dark tooltip overrides */
 .maris-tooltip {
   background: #0a0b10ee;
@@ -201,3 +199,78 @@
   display: none !important;
 }
 
+/* ---- Naval command-center utilities ---- */
+
+/* Instrument-panel grid backdrop */
+.nav-grid {
+  background-image:
+    linear-gradient(rgba(148, 193, 231, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 193, 231, 0.055) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* Fine radar sweep used behind hero */
+.nav-radar {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 58%, rgba(120, 170, 220, 0.07) 59%, transparent 62%),
+    radial-gradient(circle at 50% 50%, transparent 38%, rgba(120, 170, 220, 0.06) 39%, transparent 42%),
+    radial-gradient(circle at 50% 50%, transparent 18%, rgba(120, 170, 220, 0.05) 19%, transparent 22%);
+}
+
+/* Gold braid divider — ceremonial navy trim */
+.nav-braid {
+  background: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.55), transparent);
+  height: 1px;
+}
+
+/* Elevated panel with subtle inner light */
+.nav-panel {
+  background:
+    linear-gradient(180deg, rgba(148, 193, 231, 0.05), transparent 40%),
+    oklch(0.19 0.028 255 / 0.85);
+  border: 1px solid rgba(148, 193, 231, 0.12);
+  backdrop-filter: blur(6px);
+}
+
+/* Corner tick marks, like chart framing */
+.nav-frame {
+  position: relative;
+}
+.nav-frame::before,
+.nav-frame::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.nav-frame::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1px solid rgba(201, 162, 39, 0.6);
+  border-left: 1px solid rgba(201, 162, 39, 0.6);
+}
+.nav-frame::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 1px solid rgba(201, 162, 39, 0.6);
+  border-right: 1px solid rgba(201, 162, 39, 0.6);
+}
+
+/* Slow sweep animation for status beacon */
+@keyframes nav-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.nav-beacon {
+  animation: nav-pulse 2.4s ease-in-out infinite;
+}
+
+/* Reveal on load */
+@keyframes nav-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.nav-rise {
+  animation: nav-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

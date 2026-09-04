@@ -80,7 +80,7 @@ export default function RightPanel({
     return (
       <button
         onClick={() => setCollapsed(false)}
-        className="absolute right-0 top-0 z-30 flex h-full w-8 items-center justify-center border-l border-zinc-800 bg-zinc-950 text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="absolute right-0 top-0 z-30 flex h-full w-8 items-center justify-center border-l border-sky-200/10 bg-zinc-950 text-zinc-500 hover:text-zinc-300 transition-colors"
       >
         <ChevronLeft className="size-4" />
       </button>
@@ -88,9 +88,9 @@ export default function RightPanel({
   }
 
   return (
-    <aside className="relative z-20 flex h-full w-96 flex-col border-l border-zinc-800 bg-zinc-950">
+    <aside className="relative z-20 flex h-full w-96 flex-col border-l border-sky-200/10 bg-zinc-950">
       {/* Panel Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-sky-200/10 px-4 py-3">
         <h2 className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider">
           {view === "overview" && "Investigation Overview"}
           {view === "vessel" && (selectedVessel ? selectedVessel.name : "AIS Intelligence")}
@@ -116,7 +116,7 @@ export default function RightPanel({
 
       {/* Analysis progress */}
       {isAnalyzing && (
-        <div className="border-b border-zinc-800 px-4 py-2">
+        <div className="border-b border-sky-200/10 px-4 py-2">
           <div className="flex items-center gap-2 text-[10px] text-zinc-400">
             <div className="size-3 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
             {analysisStep}
@@ -200,7 +200,7 @@ function OverviewPanel({
   return (
     <div className="p-4 space-y-4">
       {/* Incident Card */}
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="flex items-center gap-2 mb-2">
           <AlertTriangle className="size-3.5 text-orange-400" />
           <span className="text-[10px] font-semibold text-orange-400 uppercase">
@@ -226,7 +226,7 @@ function OverviewPanel({
 
       {/* Top Source */}
       {topAttribution && (
-        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Target className="size-3.5 text-cyan-400" />
             <span className="text-[10px] font-semibold text-cyan-400 uppercase">
@@ -252,25 +252,25 @@ function OverviewPanel({
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-2">
           <div className="text-[9px] text-zinc-500">Vessels</div>
           <div className="text-[14px] font-bold text-zinc-200">{vessels.length}</div>
         </div>
-        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-2">
           <div className="text-[9px] text-zinc-500">Wind</div>
           <div className="text-[14px] font-bold text-zinc-200">
             {environmental.windSpeed} kn
           </div>
           <div className="text-[8px] text-zinc-500">{environmental.windDirectionLabel}</div>
         </div>
-        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-2">
           <div className="text-[9px] text-zinc-500">Current</div>
           <div className="text-[14px] font-bold text-zinc-200">
             {environmental.currentSpeed} kn
           </div>
           <div className="text-[8px] text-zinc-500">{environmental.currentDirectionLabel}</div>
         </div>
-        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-2">
           <div className="text-[9px] text-zinc-500">Thickness</div>
           <div className="text-[14px] font-bold text-zinc-200">
             {hyperspectral?.estimatedClass || "—"}
@@ -327,7 +327,7 @@ function VesselPanel({
                 "w-full rounded border p-2 text-left transition-colors",
                 isActive
                   ? "border-cyan-500/50 bg-cyan-500/5"
-                  : "border-zinc-800 bg-zinc-900/30 hover:border-zinc-700"
+                  : "border-sky-200/10 bg-zinc-900/30 hover:border-zinc-700"
               )}
             >
               <div className="flex items-center justify-between">
@@ -368,7 +368,7 @@ function VesselPanel({
       {/* Selected Vessel Detail */}
       {vessel && (
         <>
-          <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
             <div className="text-[10px] font-semibold text-zinc-300 uppercase mb-2">
               Vessel Profile
             </div>
@@ -427,7 +427,7 @@ function AttributionPanel({
           <button
             key={attr.vesselId}
             onClick={() => onVesselSelect(vessel)}
-            className="w-full rounded border border-zinc-800 bg-zinc-900/30 p-3 text-left hover:border-zinc-700 transition-colors"
+            className="w-full rounded border border-sky-200/10 bg-zinc-900/30 p-3 text-left hover:border-zinc-700 transition-colors"
           >
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
@@ -477,7 +477,7 @@ function AttributionPanel({
         );
       })}
 
-      <div className="rounded border border-zinc-800 bg-zinc-900/30 p-2">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/30 p-2">
         <div className="text-[9px] text-zinc-500">
           Scoring methodology: Multi-factor weighted analysis — distance (25%), trajectory (20%), temporal (20%), heading (10%), drift (15%), behaviour (10%). Weights are configurable.
         </div>
@@ -498,7 +498,7 @@ function DriftPanel({
   return (
     <div className="p-4 space-y-3">
       {/* Environmental */}
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="text-[10px] font-semibold text-zinc-300 uppercase mb-2">
           Environmental Conditions
         </div>
@@ -513,7 +513,7 @@ function DriftPanel({
 
       {/* Forward Drift */}
       {driftResult && (
-        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="size-3 text-orange-400" />
             <span className="text-[10px] font-semibold text-orange-400 uppercase">
@@ -550,7 +550,7 @@ function DriftPanel({
 
       {/* Backtrack */}
       {driftResult && (
-        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
           <div className="flex items-center gap-2 mb-2">
             <ArrowDown className="size-3 text-violet-400" />
             <span className="text-[10px] font-semibold text-violet-400 uppercase">
@@ -600,7 +600,7 @@ function ThicknessPanel({
   return (
     <div className="p-4 space-y-3">
       {/* Main Result */}
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="flex items-center gap-2 mb-2">
           <Thermometer className="size-3 text-zinc-300" />
           <span className="text-[10px] font-semibold text-zinc-300 uppercase">
@@ -622,7 +622,7 @@ function ThicknessPanel({
       </div>
 
       {/* Thickness Classes */}
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="text-[10px] font-semibold text-zinc-300 uppercase mb-2">
           Thickness Distribution
         </div>
@@ -657,7 +657,7 @@ function ThicknessPanel({
       </div>
 
       {/* Spectral Signatures */}
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="text-[10px] font-semibold text-zinc-300 uppercase mb-2">
           Spectral Signature
         </div>
@@ -745,7 +745,7 @@ function TimelinePanel({ timeline }: { timeline: TimelineEvent[] }) {
       <div className="text-[9px] text-zinc-500 uppercase tracking-wider mb-3">
         Investigation Timeline
       </div>
-      <div className="relative ml-2 border-l border-zinc-800 pl-4 space-y-3">
+      <div className="relative ml-2 border-l border-sky-200/10 pl-4 space-y-3">
         {timeline.map((event, i) => (
           <div key={i} className="relative">
             <div
@@ -775,7 +775,7 @@ function SatellitePanel({
 }) {
   return (
     <div className="p-4 space-y-3">
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="flex items-center gap-2 mb-2">
           <Radar className="size-3 text-blue-400" />
           <span className="text-[10px] font-semibold text-blue-400 uppercase">
@@ -795,7 +795,7 @@ function SatellitePanel({
         </div>
       </div>
 
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="text-[10px] font-semibold text-zinc-300 uppercase mb-2">
           Detection Confidence
         </div>
@@ -815,7 +815,7 @@ function SatellitePanel({
         </div>
       </div>
 
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="text-[10px] font-semibold text-zinc-300 uppercase mb-2">
           Processing Pipeline
         </div>
@@ -859,7 +859,7 @@ function ReportPanel({
 
       <button
         onClick={onDownloadPdf}
-        className="w-full flex items-center gap-3 rounded border border-zinc-800 bg-zinc-900/30 p-3 text-left hover:border-zinc-700 transition-colors"
+        className="w-full flex items-center gap-3 rounded border border-sky-200/10 bg-zinc-900/30 p-3 text-left hover:border-zinc-700 transition-colors"
       >
         <div className="flex size-8 items-center justify-center rounded bg-red-500/10">
           <FileText className="size-4 text-red-400" />
@@ -877,7 +877,7 @@ function ReportPanel({
 
       <button
         onClick={onDownloadJson}
-        className="w-full flex items-center gap-3 rounded border border-zinc-800 bg-zinc-900/30 p-3 text-left hover:border-zinc-700 transition-colors"
+        className="w-full flex items-center gap-3 rounded border border-sky-200/10 bg-zinc-900/30 p-3 text-left hover:border-zinc-700 transition-colors"
       >
         <div className="flex size-8 items-center justify-center rounded bg-emerald-500/10">
           <FileJson className="size-4 text-emerald-400" />
@@ -893,7 +893,7 @@ function ReportPanel({
         <Download className="size-3.5 text-zinc-500 ml-auto" />
       </button>
 
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="text-[10px] font-semibold text-zinc-300 uppercase mb-2">
           Report Contents
         </div>
@@ -917,7 +917,7 @@ function ReportPanel({
         </div>
       </div>
 
-      <div className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-2">
         <div className="text-[9px] text-zinc-500 italic">
           "Automated analytical result for decision support. Not a legal
           determination of responsibility."
@@ -935,7 +935,7 @@ function SourceLikelihood({
   attribution: VesselAttribution;
 }) {
   return (
-    <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+    <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
       <div className="flex items-center gap-2 mb-2">
         <Target className="size-3 text-cyan-400" />
         <span className="text-[10px] font-semibold text-cyan-400 uppercase">
@@ -969,7 +969,7 @@ function BehaviorCard({ anomaly }: { anomaly: BehaviorAnomaly }) {
     LOW: "text-zinc-400 bg-zinc-800/50 border-zinc-700",
   };
   return (
-    <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+    <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
       <div className="flex items-center gap-2 mb-2">
         <AlertTriangle className="size-3 text-yellow-400" />
         <span className="text-[10px] font-semibold text-yellow-400 uppercase">

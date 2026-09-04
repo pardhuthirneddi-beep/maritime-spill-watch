@@ -65,18 +65,18 @@ export default function Sidebar({
   return (
     <aside
       className={cn(
-        "relative z-20 flex h-full flex-col border-r border-zinc-800 bg-zinc-950 transition-all duration-200",
+        "relative z-20 flex h-full flex-col border-r border-sky-200/10 bg-[#050a12] transition-all duration-200",
         collapsed ? "w-12" : "w-64"
       )}
     >
       {/* Branding */}
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-3">
-        <div className="flex size-7 items-center justify-center rounded bg-orange-500/20">
-          <Anchor className="size-3.5 text-orange-400" />
+      <div className="flex items-center gap-2 border-b border-sky-200/10 px-3 py-3">
+        <div className="flex size-7 items-center justify-center rounded border border-amber-300/30 bg-sky-400/10">
+          <Anchor className="size-3.5 text-amber-300" />
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <h1 className="text-[11px] font-semibold tracking-[0.2em] text-zinc-300 lowercase">
+            <h1 className="text-[11px] font-semibold tracking-[0.24em] text-slate-100 lowercase">
               maris
             </h1>
             <p className="text-[8px] text-zinc-500 leading-none">
@@ -101,7 +101,7 @@ export default function Sidebar({
         <div className="flex flex-1 flex-col overflow-y-auto">
           {/* Command Center Stats */}
           {incident && (
-            <div className="border-b border-zinc-800 px-3 py-3">
+            <div className="border-b border-sky-200/10 px-3 py-3">
               <h2 className="mb-2 text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">
                 Active Incident
               </h2>
@@ -109,7 +109,7 @@ export default function Sidebar({
                 <StatRow
                   label="Possible Spills"
                   value="1"
-                  color="text-orange-400"
+                  color="text-amber-300"
                 />
                 <StatRow
                   label="Confidence"
@@ -131,7 +131,7 @@ export default function Sidebar({
           )}
 
           {/* Navigation */}
-          <div className="border-b border-zinc-800 px-1 py-2">
+          <div className="border-b border-sky-200/10 px-1 py-2">
             <h2 className="mb-1 px-2 text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">
               Workspace
             </h2>
@@ -156,7 +156,7 @@ export default function Sidebar({
           </div>
 
           {/* Layer Controls */}
-          <div className="border-b border-zinc-800 px-1 py-2">
+          <div className="border-b border-sky-200/10 px-1 py-2">
             <button
               onClick={() => setLayersOpen(!layersOpen)}
               className="flex w-full items-center gap-1.5 px-2 text-[9px] font-semibold text-zinc-500 uppercase tracking-wider"
@@ -199,7 +199,7 @@ export default function Sidebar({
           </div>
 
           {/* External Views */}
-          <div className="border-b border-zinc-800 px-1 py-2">
+          <div className="border-b border-sky-200/10 px-1 py-2">
             <h2 className="mb-1 px-2 text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">
               Visualization
             </h2>
