@@ -510,22 +510,26 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
       attributionControl: false,
     });
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
-
     // Set globe projection
     map.setProjection({ type: "globe" });
 
-    // Add deck.gl overlay
-    const deckOverlay = new MapboxOverlay({
-      interleaved: false,
-      layers: [],
-    });
-    map.addControl(deckOverlay as unknown as maplibregl.IControl);
-    overlayRef.current = deckOverlay;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+
+    // Wait for style to fully load before adding deck.gl overlay
+    const onStyleLoad = () => {
+      const deckOverlay = new MapboxOverlay({
+        interleaved: false,
+        layers: [],
+      });
+      map.addControl(deckOverlay as unknown as maplibregl.IControl);
+      overlayRef.current = deckOverlay;
+    };
+    map.on("load", onStyleLoad);
 
     mapRef.current = map;
 
     return () => {
+      map.off("load", onStyleLoad);
       map.remove();
       mapRef.current = null;
     };
