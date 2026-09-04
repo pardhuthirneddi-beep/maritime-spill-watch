@@ -70,7 +70,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
   const layerGroupsRef = useRef<Map<string, L.LayerGroup>>(new Map());
   const [selectedVessel, setSelectedVessel] = useState<AisVessel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [vesselFilter, setVesselFilter] = useState<"all" | "near" | "watch">("all");
+  const [vesselFilter, setVesselFilter] = useState<"all" | "near">("all");
   const [layers, setLayers] = useState<Globe3dLayer[]>([
     { id: "globe_vessels", label: "Vessels", enabled: true },
     { id: "globe_tracks", label: "Vessel Tracks", enabled: true },
@@ -497,7 +497,7 @@ export default function IntelligenceGlobe({ onBack }: IntelligenceGlobeProps) {
               </div>
             </div>
             <div className="flex items-center gap-1 px-3 py-1.5 border-b border-zinc-800/50">
-              {([["all", `ALL ${DEMO_VESSELS.length}`], ["near", "NEAR SPILL 6"], ["watch", "WATCHLIST 2"]] as const).map(([k, l]) => (
+              {([["all", `ALL ${DEMO_VESSELS.length}`], ["near", "NEAR SPILL"]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setVesselFilter(k)} className={cn("text-[8px] px-2 py-0.5 rounded transition-colors", vesselFilter === k ? "bg-cyan-500/15 text-cyan-400" : "text-zinc-500 hover:text-zinc-300")}>{l}</button>
               ))}
             </div>
