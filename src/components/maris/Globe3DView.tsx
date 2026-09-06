@@ -40,7 +40,7 @@ import {
 // plus analytic terrain — zero paid APIs required.
 
 import * as Cesium from "cesium";
-import "cesium/index.css";
+import "cesium/Source/Widgets/widgets.css";
 
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
