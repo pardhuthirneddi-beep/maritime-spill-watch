@@ -1,52 +1,11 @@
 // maris — Landing page
 import { useEffect, useState } from "react";
-import {
-  ArrowRight,
-  Globe,
-  Layers,
-  Radio,
-  ScanEye,
-  Shield,
-  Target,
-  Wind,
-} from "lucide-react";
+import { ArrowRight, ScanEye, Shield } from "lucide-react";
 import { useNavigate } from "react-router";
 import GlareHover from "@/components/GlareHover";
 import Radar from "@/components/Radar";
 import SpecularButton from "@/components/SpecularButton";
-
-const FEATURES = [
-  {
-    icon: Layers,
-    title: "Satellite Oil Spill Detection",
-    desc: "SAR synthetic-aperture radar analysis with dark-spot extraction, shape classification, and contextual filtering to identify possible oil slicks with quantified confidence.",
-  },
-  {
-    icon: Target,
-    title: "Probable Source Attribution",
-    desc: "Multi-factor scoring engine ranks candidate vessels by distance, trajectory alignment, temporal proximity, heading consistency, drift correlation, and behavioural indicators.",
-  },
-  {
-    icon: Wind,
-    title: "Drift Forecasting & Backtracking",
-    desc: "Forward prediction models spill dispersion over 48 hours. Backtracking reconstructs the probable origin from wind and ocean-current vectors.",
-  },
-  {
-    icon: Globe,
-    title: "Hyperspectral Thickness Estimation",
-    desc: "Experimental oil-thickness classification using synthetic hyperspectral spectral signatures, with per-class confidence and uncertainty bounds.",
-  },
-  {
-    icon: Radio,
-    title: "AIS Vessel Intelligence",
-    desc: "Automatic Identification System integration for real-time vessel tracking, trajectory reconstruction, and behavioural anomaly detection.",
-  },
-  {
-    icon: Shield,
-    title: "Investigation Report Generation",
-    desc: "Automated PDF and machine-readable JSON evidence records with explainable methodology, limitations, and legal disclaimers.",
-  },
-];
+import MagicBento from "@/components/maris/MagicBento";
 
 const PIPELINE = [
   "SAR Imagery",
@@ -269,41 +228,19 @@ export default function Landing() {
             <div className="hidden h-px flex-1 mx-8 bg-gradient-to-r from-sky-200/15 to-transparent sm:block" />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((f, i) => {
-              const Icon = f.icon;
-              return (
-                <GlareHover
-                  key={f.title}
-                  width="100%"
-                  height="auto"
-                  background="transparent"
-                  borderRadius="2px"
-                  borderColor="rgba(148,193,231,0.12)"
-                  glareColor="#8ab6e0"
-                  glareOpacity={0.14}
-                  glareAngle={-25}
-                  glareSize={280}
-                  transitionDuration={800}
-                  className="nav-panel nav-frame group h-full text-left"
-                >
-                  <div className="p-5">
-                    <div className="mb-4 flex items-center justify-between">
-                      <div className="flex size-9 items-center justify-center rounded-sm border border-sky-200/15 bg-sky-400/10 transition-colors group-hover:border-amber-300/40 group-hover:bg-amber-300/10">
-                        <Icon className="size-4 text-sky-300 transition-colors group-hover:text-amber-200" />
-                      </div>
-                      <span className="font-mono text-[9px] text-slate-700">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                    </div>
-                    <h3 className="mb-1.5 text-[12px] font-semibold tracking-wide text-slate-100">
-                      {f.title}
-                    </h3>
-                    <p className="text-[10px] leading-relaxed text-slate-500">{f.desc}</p>
-                  </div>
-                </GlareHover>
-              );
-            })}
+          <div className="flex justify-center">
+            <MagicBento
+              textAutoHide={true}
+              enableStars={true}
+              enableSpotlight={true}
+              enableBorderGlow={true}
+              enableTilt={true}
+              enableMagnetism={true}
+              clickEffect={true}
+              spotlightRadius={300}
+              particleCount={12}
+              glowColor="56, 189, 248"
+            />
           </div>
         </div>
       </section>
