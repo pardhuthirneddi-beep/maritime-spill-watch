@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import AnalystPanel from "./AnalystPanel";
 import type {
   OilSpillIncident,
   AisVessel,
@@ -100,6 +101,7 @@ export default function RightPanel({
           {view === "timeline" && "Incident Timeline"}
           {view === "report" && "Investigation Report"}
           {view === "satellite" && "Satellite Analysis"}
+          {view === "analyst" && "AI Analyst"}
         </h2>
         <div className="flex items-center gap-1">
           <button
@@ -174,6 +176,19 @@ export default function RightPanel({
           <ReportPanel
             onDownloadPdf={onDownloadPdf}
             onDownloadJson={onDownloadJson}
+          />
+        )}
+        {view === "analyst" && (
+          <AnalystPanel
+            incident={incident}
+            vessels={vessels}
+            attributions={attributions}
+            anomalies={anomalies}
+            environmental={environmental}
+            driftResult={driftResult}
+            hyperspectral={hyperspectral}
+            timeline={timeline}
+            isAnalyzing={isAnalyzing}
           />
         )}
       </div>

@@ -13,6 +13,7 @@ import {
   Radar,
   ScanEye,
   Ship,
+  Sparkles,
   Target,
   Thermometer,
   Wind,
@@ -37,6 +38,7 @@ const NAV_ITEMS: {
 }[] = [
   { id: "overview", label: "Command Center", icon: Crosshair },
   { id: "satellite", label: "Satellite Analysis", icon: Radar },
+  { id: "analyst", label: "AI Analyst", icon: Sparkles },
   { id: "vessel", label: "AIS Intelligence", icon: Ship },
   { id: "attribution", label: "Source Attribution", icon: Target },
   { id: "drift", label: "Drift Model", icon: Wind },

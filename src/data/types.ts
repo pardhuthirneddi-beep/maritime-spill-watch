@@ -171,7 +171,8 @@ export type PanelView =
   | "thickness"
   | "timeline"
   | "report"
-  | "satellite";
+  | "satellite"
+  | "analyst";
 
 // ─── SAR IMAGERY TYPES ─────────────────────────────────────────────
 

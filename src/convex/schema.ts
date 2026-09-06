@@ -34,6 +34,18 @@ const schema = defineSchema(
 
     // add other tables here
 
+    // AI Analyst conversation log (Experiential Labs streaming chat)
+    analystMessages: defineTable({
+      sessionId: v.string(),
+      userId: v.id("users"),
+      role: v.union(v.literal("user"), v.literal("assistant")),
+      content: v.string(),
+      contextDigest: v.optional(v.string()),
+      replyToId: v.optional(v.id("analystMessages")),
+      streaming: v.optional(v.boolean()),
+      error: v.optional(v.boolean()),
+    }).index("by_session_user", ["sessionId", "userId"]),
+
     // tableName: defineTable({
     //   ...
     //   // table fields
