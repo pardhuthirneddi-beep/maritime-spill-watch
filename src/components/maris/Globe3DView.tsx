@@ -34,16 +34,19 @@ import {
 } from "@/data/temporalReplay";
 
 // ─── CESIUM SETUP ────────────────────────────────────────────────────
-// Assets are served from public/cesium (copied from node_modules at install).
-// No ion token: we use Esri World Imagery via a public ArcGIS REST endpoint
-// plus analytic terrain — zero paid APIs required.
+// Static assets (Workers/Assets/Widgets) are loaded from the official
+// version-pinned CDN — the managed dev environment does not reliably serve
+// large binary assets from public/. No ion token: we use Esri World Imagery
+// via a public ArcGIS REST endpoint plus analytic terrain — zero paid APIs.
 
 import * as Cesium from "cesium";
 import "cesium/index.css";
 
+const CESIUM_BASE_URL_CDN = "https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/";
+
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
-  (window as unknown as Record<string, unknown>).CESIUM_BASE_URL = "/cesium/";
+  (window as unknown as Record<string, unknown>).CESIUM_BASE_URL = CESIUM_BASE_URL_CDN;
 }
 Cesium.Ion.defaultAccessToken = "";
 
