@@ -10,6 +10,7 @@ import {
   Crosshair,
   FileText,
   Layers,
+  Orbit,
   Radar,
   ScanEye,
   Ship,
@@ -48,7 +49,8 @@ const NAV_ITEMS: {
 ];
 
 const EXTERNAL_VIEWS = [
-  { path: "/sar", label: "SAR Analysis", icon: ScanEye, desc: "Scientific imagery viewer" },
+  { path: "/sar", label: "SAR Imagery", icon: ScanEye, desc: "Scientific imagery viewer" },
+  { path: "/3d-intelligence", label: "3D Intelligence", icon: Orbit, desc: "Spatial investigation" },
 ];
 
 export default function Sidebar({

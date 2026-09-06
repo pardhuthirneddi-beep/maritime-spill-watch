@@ -6,9 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
-  Crosshair,
   Eye,
-  EyeOff,
   Loader2,
   LocateFixed,
   Play,
@@ -28,8 +26,6 @@ import type {
 import type { Globe3dLayer, SceneSelection } from "@/data/globe3dTypes";
 import {
   EVIDENCE_EVENTS,
-  INVESTIGATION_AREA_CENTER,
-  INVESTIGATION_AREA_RADIUS_KM,
   buildReplayFrame,
   computeCorrelation,
   investigationAreaPolygon,
@@ -45,10 +41,9 @@ import {
 import * as Cesium from "cesium";
 import "cesium/index.css";
 
-const CESIUM_BASE_URL_SET = "cesiumBaseUrlSet" in window ? true : false;
-if (!CESIUM_BASE_URL_SET) {
+if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
-  window.CESIUM_BASE_URL = "/cesium/";
+  (window as unknown as Record<string, unknown>).CESIUM_BASE_URL = "/cesium/";
 }
 Cesium.Ion.defaultAccessToken = "";
 
@@ -57,10 +52,10 @@ const ESRI_IMAGERY =
 
 // ─── STYLING CONSTANTS ───────────────────────────────────────────────
 
+const COLOR_BG = Cesium.Color.fromCssColorString("#050a12");
 const COLOR_SPILL = Cesium.Color.fromCssColorString("#fb923c");
 const COLOR_SPILL_FILL = Cesium.Color.fromCssColorString("#ea580c").withAlpha(0.28);
-const COLOR_CORRIDOR = Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.06);
-const COLOR_CORRIDOR_LINE = Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.35);
+const COLOR_CORRIDOR = Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.8);
 const COLOR_AREA = Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.5);
 const COLOR_AREA_FILL = Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.04);
 const COLOR_VESSEL = Cesium.Color.fromCssColorString("#60a5fa");
@@ -85,6 +80,16 @@ interface Globe3DViewProps {
   onBackTo2d: () => void;
 }
 
+/** Tag an entity so the click handler can identify what was picked. */
+function tagEntity(
+  entity: Cesium.Entity,
+  kind: "spill" | "vessel" | "event",
+  id: string,
+) {
+  (entity as unknown as { marisKind: string; marisId: string }).marisKind = kind;
+  (entity as unknown as { marisKind: string; marisId: string }).marisId = id;
+}
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────
 
 export default function Globe3DView({
@@ -92,7 +97,6 @@ export default function Globe3DView({
   vessels,
   attributions,
   driftResult,
-  environmental,
   layers,
   onLayerToggle,
   selectedVesselMmsi,
@@ -101,6 +105,13 @@ export default function Globe3DView({
 }: Globe3DViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
+  // Persistent data sources so each effect can rebuild its own entities
+  // without wiping entities owned by other effects.
+  const staticDsRef = useRef<Cesium.CustomDataSource | null>(null);
+  const dynamicDsRef = useRef<Cesium.CustomDataSource | null>(null);
+  const onSelectRef = useRef(onVesselSelect);
+  onSelectRef.current = onVesselSelect;
+
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<SceneSelection>(null);
@@ -111,8 +122,8 @@ export default function Globe3DView({
   const startMs = useMemo(() => replayStartMs(vessels), [vessels]);
   const endMs = useMemo(() => replayEndMs(vessels), [vessels]);
   const frame = useMemo(
-    () => (replayMs === null ? null : buildReplayFrame(vessels, EVIDENCE_EVENTS, replayMs)),
-    [vessels, replayMs],
+    () => buildReplayFrame(vessels, EVIDENCE_EVENTS, replayMs ?? endMs),
+    [vessels, replayMs, endMs],
   );
 
   const isLayerOn = useCallback(
@@ -120,48 +131,58 @@ export default function Globe3DView({
     [layers],
   );
 
-  // ── VIEWER INIT ────────────────────────────────────────────────────
+  // ── VIEWER INIT (once) ─────────────────────────────────────────────
   useEffect(() => {
-    if (!containerRef.current || viewerRef.current) return;
+    const container = containerRef.current;
+    if (!container || viewerRef.current) return;
 
-    let cancelled = false;
-    const viewer = new Cesium.Viewer(containerRef.current, {
-      animation: false,
-      timeline: false,
-      baseLayerPicker: false,
-      geocoder: false,
-      homeButton: false,
-      sceneModePicker: false,
-      navigationHelpButton: false,
-      fullscreenButton: false,
-      infoBox: false,
-      selectionIndicator: false,
-      requestRenderMode: false,
-      baseLayer: Cesium.ImageryLayer.fromProviderAsync(
-        Cesium.TileMapServiceImageryProvider.fromUrl(
-          Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"),
+    let viewer: Cesium.Viewer;
+    try {
+      viewer = new Cesium.Viewer(container, {
+        animation: false,
+        timeline: false,
+        baseLayerPicker: false,
+        geocoder: false,
+        homeButton: false,
+        sceneModePicker: false,
+        navigationHelpButton: false,
+        fullscreenButton: false,
+        infoBox: false,
+        selectionIndicator: false,
+        requestRenderMode: false,
+        baseLayer: Cesium.ImageryLayer.fromProviderAsync(
+          Cesium.TileMapServiceImageryProvider.fromUrl(
+            Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"),
+          ),
         ),
-      ),
-      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-    });
+        terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+      });
+
+      // Esri satellite imagery replaces the default NaturalEarth fallback.
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({ url: ESRI_IMAGERY, maximumLevel: 18 }),
+      );
+
+      // Scene character: elevated oblique look, no stars, no atmosphere bloom.
+      viewer.scene.globe.enableLighting = false;
+      if (viewer.scene.skyBox) viewer.scene.skyBox.show = false;
+      viewer.scene.backgroundColor = COLOR_BG;
+      viewer.scene.screenSpaceCameraController.enableTilt = true;
+      viewer.scene.screenSpaceCameraController.minimumZoomDistance = 400;
+      viewer.scene.screenSpaceCameraController.maximumZoomDistance = 25_000_000;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cesium failed to initialise");
+      return;
+    }
 
     viewerRef.current = viewer;
 
-    // Esri satellite imagery replaces the default NaturalEarth fallback.
-    try {
-      const esri = new Cesium.UrlTemplateImageryProvider({ url: ESRI_IMAGERY, maximumLevel: 18 });
-      viewer.imageryLayers.addImageryProvider(esri);
-    } catch {
-      // NaturalEarthII fallback already loaded
-    }
-
-    // Scene character: elevated oblique look, no stars, no atmosphere bloom.
-    viewer.scene.globe.enableLighting = false;
-    viewer.scene.skyBox.show = false;
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#050a12");
-    viewer.scene.screenSpaceCameraController.enableTilt = true;
-    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 400;
-    viewer.scene.screenSpaceCameraController.maximumZoomDistance = 25_000_000;
+    const staticDs = new Cesium.CustomDataSource("maris-static");
+    const dynamicDs = new Cesium.CustomDataSource("maris-dynamic");
+    viewer.dataSources.add(staticDs);
+    viewer.dataSources.add(dynamicDs);
+    staticDsRef.current = staticDs;
+    dynamicDsRef.current = dynamicDs;
 
     // Click picking
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -171,21 +192,20 @@ export default function Globe3DView({
         const entity = picked.id as Cesium.Entity & { marisKind?: string; marisId?: string };
         if (entity.marisKind === "vessel") {
           setSelection({ kind: "vessel", mmsi: entity.marisId! });
-          onVesselSelect(entity.marisId!);
+          onSelectRef.current(entity.marisId!);
         } else if (entity.marisKind === "spill") {
           setSelection({ kind: "spill" });
         } else if (entity.marisKind === "event") {
           setSelection({ kind: "event", eventId: entity.marisId! });
+        } else {
+          setSelection(null);
+          onSelectRef.current(null);
         }
       } else {
         setSelection(null);
-        onVesselSelect(null);
+        onSelectRef.current(null);
       }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-    viewer
-      .flyTo(viewer.entities, { duration: 0 })
-      .catch(() => undefined); // no-op warm-up
 
     setReady(true);
 
@@ -193,13 +213,15 @@ export default function Globe3DView({
       handler.destroy();
       viewer.destroy();
       viewerRef.current = null;
+      staticDsRef.current = null;
+      dynamicDsRef.current = null;
       setReady(false);
     };
-  }, [onVesselSelect]);
+  }, []);
 
   // ── INITIAL CAMERA + FOCUS INVESTIGATION ──────────────────────────
   const focusInvestigation = useCallback(
-    (firstLoad = false) => {
+    (duration = 1.6) => {
       const viewer = viewerRef.current;
       if (!viewer || !incident) return;
 
@@ -208,7 +230,7 @@ export default function Globe3DView({
       );
       const bb = Cesium.BoundingSphere.fromPoints(areaPositions);
       viewer.camera.flyToBoundingSphere(bb, {
-        duration: firstLoad ? 2.4 : 1.6,
+        duration,
         offset: new Cesium.HeadingPitchRange(
           Cesium.Math.toRadians(-30),
           Cesium.Math.toRadians(-32),
@@ -220,101 +242,81 @@ export default function Globe3DView({
   );
 
   useEffect(() => {
-    if (ready && incident) focusInvestigation(true);
+    if (ready && incident) focusInvestigation(2.4);
   }, [ready, incident, focusInvestigation]);
 
-  // ── SPILL ENTITY (irregular polygon + intensity zones) ────────────
+  // ── STATIC SCENE: SPILL + AREA + SAR SWATH + DRIFT ZONES ──────────
   useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || !incident) return;
-    const ents = viewer.entities;
+    const ds = staticDsRef.current;
+    if (!ds || !incident || !ready) return;
+    ds.entities.removeAll();
 
     // Primary slick polygon — irregular geometry from the shared SAR data.
-    const slick = ents.add({
-      polygon: {
-        hierarchy: new Cesium.PolygonHierarchy(
-          incident.polygon.coordinates.map(([lat, lon]) =>
-            Cesium.Cartesian3.fromDegrees(lon, lat),
-          ),
-        ),
-        material: COLOR_SPILL_FILL,
-        outline: true,
-        outlineColor: COLOR_SPILL,
-        outlineWidth: 2,
-        height: 0,
-        extrudedHeight: 30,
-      },
-      position: Cesium.Cartesian3.fromDegrees(
-        incident.polygon.center[1],
-        incident.polygon.center[0],
-        200,
-      ),
-      label: {
-        text: `OS-${incident.incidentNumber}  ·  ${incident.confidence.score}%`,
-        font: "11px 'JetBrains Mono', monospace",
-        fillColor: COLOR_SPILL,
-        showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString("#050a12ee"),
-        backgroundPadding: new Cesium.Cartesian2(6, 4),
-        pixelOffset: new Cesium.Cartesian2(0, -26),
-        style: Cesium.LabelStyle.FILL,
-        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 4_000_000),
-      },
-    });
-    (slick as unknown as { marisKind: string; marisId: string }).marisKind = "spill";
-    (slick as unknown as { marisKind: string; marisId: string }).marisId = incident.id;
-
-    // Intensity core — inner zones by thickness class mix.
-    const cx = incident.polygon.center[0];
-    const cy = incident.polygon.center[1];
-    const zones: { rKm: number; color: Cesium.Color }[] = [
-      { rKm: 0.55, color: Cesium.Color.fromCssColorString("#7c2d12").withAlpha(0.75) },
-      { rKm: 1.3, color: Cesium.Color.fromCssColorString("#9a3412").withAlpha(0.5) },
-      { rKm: 2.4, color: Cesium.Color.fromCssColorString("#c2410c").withAlpha(0.28) },
-    ];
-    for (const z of zones) {
-      const pts: Cesium.Cartesian3[] = [];
-      for (let i = 0; i < 40; i++) {
-        const brg = (i / 40) * Math.PI * 2;
-        const jitter = 1 + 0.25 * Math.sin(brg * 3 + cx) * Math.cos(brg * 2 - cy);
-        const lat = cx + ((z.rKm * jitter) / 111) * Math.cos(brg);
-        const lon =
-          cy +
-          ((z.rKm * jitter) / (111 * Math.cos((cx * Math.PI) / 180))) * Math.sin(brg);
-        pts.push(Cesium.Cartesian3.fromDegrees(lon, lat));
-      }
-      ents.add({
+    if (isLayerOn("globe_spill")) {
+      const slick = ds.entities.add({
         polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(pts),
-          material: z.color,
-          outline: false,
-          height: 2,
-          classificationType: Cesium.ClassificationType.BOTH,
+          hierarchy: new Cesium.PolygonHierarchy(
+            incident.polygon.coordinates.map(([lat, lon]) =>
+              Cesium.Cartesian3.fromDegrees(lon, lat),
+            ),
+          ),
+          material: COLOR_SPILL_FILL,
+          outline: true,
+          outlineColor: COLOR_SPILL,
+          outlineWidth: 2,
+          height: 0,
+          extrudedHeight: 30,
+        },
+        position: Cesium.Cartesian3.fromDegrees(
+          incident.polygon.center[1],
+          incident.polygon.center[0],
+          200,
+        ),
+        label: {
+          text: `OS-${incident.incidentNumber}  ·  ${incident.confidence.score}%`,
+          font: "11px 'JetBrains Mono', monospace",
+          fillColor: COLOR_SPILL,
+          showBackground: true,
+          backgroundColor: COLOR_BG.withAlpha(0.93),
+          backgroundPadding: new Cesium.Cartesian2(6, 4),
+          pixelOffset: new Cesium.Cartesian2(0, -26),
+          style: Cesium.LabelStyle.FILL,
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 4_000_000),
         },
       });
+      tagEntity(slick, "spill", incident.id);
+
+      // Intensity core — inner zones by thickness class mix.
+      const [cx, cy] = incident.polygon.center;
+      const zones: { rKm: number; color: Cesium.Color }[] = [
+        { rKm: 0.55, color: Cesium.Color.fromCssColorString("#7c2d12").withAlpha(0.75) },
+        { rKm: 1.3, color: Cesium.Color.fromCssColorString("#9a3412").withAlpha(0.5) },
+        { rKm: 2.4, color: Cesium.Color.fromCssColorString("#c2410c").withAlpha(0.28) },
+      ];
+      for (const z of zones) {
+        const pts: Cesium.Cartesian3[] = [];
+        for (let i = 0; i < 40; i++) {
+          const brg = (i / 40) * Math.PI * 2;
+          const jitter = 1 + 0.25 * Math.sin(brg * 3 + cx) * Math.cos(brg * 2 - cy);
+          const lat = cx + ((z.rKm * jitter) / 111) * Math.cos(brg);
+          const lon =
+            cy +
+            ((z.rKm * jitter) / (111 * Math.cos((cx * Math.PI) / 180))) * Math.sin(brg);
+          pts.push(Cesium.Cartesian3.fromDegrees(lon, lat));
+        }
+        ds.entities.add({
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(pts),
+            material: z.color,
+            outline: false,
+            height: 2,
+          },
+        });
+      }
     }
 
-    return () => {
-      ents.remove(slick);
-      // zones removed with the entities collection wipe below
-    };
-  }, [incident]);
-
-  // Wipe zone entities (they were added without a handle) each incident change.
-  useEffect(() => {
-    return () => {
-      viewerRef.current?.entities.removeAll();
-    };
-  }, [incident]);
-
-  // ── INVESTIGATION AREA + SAR SWATH + DRIFT ─────────────────────────
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || !incident) return;
-    const ents = viewer.entities;
-
     if (isLayerOn("globe_boundaries")) {
-      ents.add({
+      ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(
             investigationAreaPolygon().map(([lat, lon]) =>
@@ -342,7 +344,7 @@ export default function Globe3DView({
         [12.28, 87.05],
         [12.25, 87.12],
       ];
-      ents.add({
+      ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(
             swath.map(([lat, lon]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
@@ -368,7 +370,7 @@ export default function Globe3DView({
 
     if (isLayerOn("globe_detection_zones") && driftResult) {
       for (const p of driftResult.forward) {
-        ents.add({
+        ds.entities.add({
           polygon: {
             hierarchy: new Cesium.PolygonHierarchy(
               p.polygon.map(([lat, lon]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
@@ -382,7 +384,7 @@ export default function Globe3DView({
         });
       }
       for (const p of driftResult.backtrack) {
-        ents.add({
+        ds.entities.add({
           polygon: {
             hierarchy: new Cesium.PolygonHierarchy(
               p.polygon.map(([lat, lon]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
@@ -396,17 +398,13 @@ export default function Globe3DView({
         });
       }
     }
+  }, [ready, incident, driftResult, layers, isLayerOn]);
 
-    return () => {
-      ents.removeAll();
-    };
-  }, [incident, driftResult, layers, isLayerOn]);
-
-  // ── VESSELS + TRACKS (rebuilt when replay time / selection changes) ─
+  // ── DYNAMIC SCENE: TRACKS + VESSELS + CORRELATION + EVIDENCE ──────
   useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || !incident) return;
-    const ents = viewer.entities;
+    const ds = dynamicDsRef.current;
+    if (!ds || !incident || !ready) return;
+    ds.entities.removeAll();
 
     if (isLayerOn("globe_tracks")) {
       for (const v of vessels) {
@@ -414,7 +412,7 @@ export default function Globe3DView({
         const positions = v.trajectory.map(([lat, lon]) =>
           Cesium.Cartesian3.fromDegrees(lon, lat),
         );
-        ents.add({
+        ds.entities.add({
           polyline: {
             positions,
             width: sel ? 3 : 1.4,
@@ -427,13 +425,13 @@ export default function Globe3DView({
       }
     }
 
-    if (isLayerOn("globe_vessels") && frame) {
+    if (isLayerOn("globe_vessels")) {
       for (const v of vessels) {
         const pos = frame.positions[v.mmsi];
         if (!pos) continue;
         const sel = selectedVesselMmsi === v.mmsi;
 
-        ents.add({
+        const vesselEnt = ds.entities.add({
           position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
           point: {
             pixelSize: sel ? 15 : 9,
@@ -447,19 +445,20 @@ export default function Globe3DView({
             font: "10px 'JetBrains Mono', monospace",
             fillColor: sel ? COLOR_VESSEL_SEL : Cesium.Color.fromCssColorString("#cbd5e1"),
             showBackground: true,
-            backgroundColor: Cesium.Color.fromCssColorString("#050a12cc"),
+            backgroundColor: COLOR_BG.withAlpha(0.8),
             backgroundPadding: new Cesium.Cartesian2(5, 3),
             pixelOffset: new Cesium.Cartesian2(0, -18),
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 900_000),
           },
         });
+        tagEntity(vesselEnt, "vessel", v.mmsi);
 
         // Heading leader line (course vector)
         const headingRad = Cesium.Math.toRadians(pos.headingDeg);
         const distDeg = 0.012;
         const tipLat = pos.lat + distDeg * Math.cos(headingRad);
         const tipLon = pos.lon + distDeg * Math.sin(headingRad);
-        ents.add({
+        ds.entities.add({
           polyline: {
             positions: [
               Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
@@ -473,25 +472,24 @@ export default function Globe3DView({
     }
 
     // Correlation overlay for the selected candidate vessel
-    if (isLayerOn("globe_correlation") && selectedVesselMmsi && incident) {
+    if (isLayerOn("globe_correlation") && selectedVesselMmsi) {
       const v = vessels.find((vv) => vv.mmsi === selectedVesselMmsi);
       const attr = attributions.find((a) => a.vesselId === selectedVesselMmsi);
       if (v && attr) {
-        const origin = driftResult?.backtrack?.[driftResult.backtrack.length - 1]?.center ??
+        const origin =
+          driftResult?.backtrack?.[driftResult.backtrack.length - 1]?.center ??
           incident.polygon.center;
-        ents.add({
+        ds.entities.add({
           polyline: {
             positions: [
               Cesium.Cartesian3.fromDegrees(v.lon, v.lat, 60),
               Cesium.Cartesian3.fromDegrees(origin[1], origin[0], 60),
             ],
             width: 2,
-            material: new Cesium.PolylineArrowMaterialProperty(
-              Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.8),
-            ),
+            material: new Cesium.PolylineArrowMaterialProperty(COLOR_CORRIDOR),
           },
         });
-        ents.add({
+        ds.entities.add({
           polyline: {
             positions: v.trajectory.map(([lat, lon]) =>
               Cesium.Cartesian3.fromDegrees(lon, lat, 40),
@@ -504,29 +502,9 @@ export default function Globe3DView({
       }
     }
 
-    return () => {
-      ents.removeAll();
-    };
-  }, [
-    incident,
-    vessels,
-    frame,
-    selectedVesselMmsi,
-    layers,
-    isLayerOn,
-    attributions,
-    driftResult,
-  ]);
-
-  // ── EVIDENCE MARKERS ───────────────────────────────────────────────
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || !incident || !frame) return;
-    const ents = viewer.entities;
-
     if (isLayerOn("globe_grid")) {
       for (const ev of frame.visibleEvents) {
-        ents.add({
+        const evEnt = ds.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ev.lon, ev.lat, 300),
           point: {
             pixelSize: 8,
@@ -540,21 +518,26 @@ export default function Globe3DView({
             font: "10px 'JetBrains Mono', monospace",
             fillColor: Cesium.Color.fromCssColorString("#fde68a"),
             showBackground: true,
-            backgroundColor: Cesium.Color.fromCssColorString("#050a12cc"),
+            backgroundColor: COLOR_BG.withAlpha(0.8),
             backgroundPadding: new Cesium.Cartesian2(5, 3),
             pixelOffset: new Cesium.Cartesian2(0, -16),
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 400_000),
           },
         });
-        (ents.values[ents.values.length - 1] as unknown as { marisKind: string; marisId: string }).marisKind = "event";
-        (ents.values[ents.values.length-1] as unknown as { marisId: string }).marisId = ev.id;
+        tagEntity(evEnt, "event", ev.id);
       }
     }
-
-    return () => {
-      ents.removeAll();
-    };
-  }, [incident, frame, layers, isLayerOn]);
+  }, [
+    ready,
+    incident,
+    vessels,
+    frame,
+    selectedVesselMmsi,
+    layers,
+    isLayerOn,
+    attributions,
+    driftResult,
+  ]);
 
   // ── REPLAY CLOCK ───────────────────────────────────────────────────
   useEffect(() => {
@@ -591,9 +574,9 @@ export default function Globe3DView({
           bb.radius * 4,
         ),
       });
-    } else if (selection.kind === "vessel") {
+    } else if (selection.kind === "vessel" && frame) {
       const v = vessels.find((vv) => vv.mmsi === selection.mmsi);
-      if (v && frame) {
+      if (v) {
         const pos = frame.positions[v.mmsi];
         viewer.camera.flyToBoundingSphere(
           new Cesium.BoundingSphere(
@@ -620,14 +603,9 @@ export default function Globe3DView({
     viewerRef.current?.camera.flyHome(1.6);
   };
 
-  const handleTimeScrub = (ms: number) => {
-    setReplayMs(ms);
-  };
-
   const fmtTime = (ms: number) =>
     new Date(ms).toLocaleTimeString("en-GB", { hour12: false, timeZone: "UTC" }) + "Z";
 
-  // ── ERROR STATE ────────────────────────────────────────────────────
   const selCorrelation = useMemo(() => {
     if (!selectedVesselMmsi || !incident) return null;
     const v = vessels.find((vv) => vv.mmsi === selectedVesselMmsi);
@@ -636,6 +614,7 @@ export default function Globe3DView({
     return computeCorrelation(v, incident.polygon.center, attr.overallScore);
   }, [selectedVesselMmsi, incident, vessels, attributions]);
 
+  // ── RENDER ─────────────────────────────────────────────────────────
   if (error) {
     return (
       <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#050a12]">
@@ -650,7 +629,7 @@ export default function Globe3DView({
             Return to 2D Map
           </button>
         </div>
-    </div>
+      </div>
     );
   }
 
@@ -669,7 +648,7 @@ export default function Globe3DView({
         </div>
       )}
 
-      {/* Left rail — layers + selection info */}
+      {/* Left rail — layers */}
       <div className="absolute left-3 top-3 z-20 flex w-60 flex-col gap-2">
         <div className="rounded border border-sky-200/10 bg-[#050a12]/90 p-2">
           <div className="mb-1.5 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -705,7 +684,7 @@ export default function Globe3DView({
       {/* Right-bottom camera controls */}
       <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-1.5">
         <button
-          onClick={() => focusInvestigation(false)}
+          onClick={() => focusInvestigation()}
           className="flex cursor-pointer items-center gap-1.5 rounded border border-amber-300/30 bg-amber-300/10 px-2.5 py-1.5 text-[10px] font-medium text-amber-300 hover:bg-amber-300/20"
           title="Frame spill + vessels + area"
         >
@@ -720,11 +699,11 @@ export default function Globe3DView({
       </div>
 
       {/* Replay timeline */}
-      <div className="absolute bottom-3 left-1/2 z-20 w-[420px] max-w-[60vw] -translate-x-1/2 rounded border border-sky-200/10 bg-[#050a12]/92 p-2.5">
+      <div className="absolute bottom-3 left-1/2 z-20 w-[420px] max-w-[60vw] -translate-x-1/2 rounded border border-sky-200/10 bg-[#050a12]/90 p-2.5">
         <div className="mb-1.5 flex items-center justify-between">
           <button
             onClick={() => {
-              if (replayMs === null) setReplayMs(startMs);
+              if (replayMs !== null && replayMs >= endMs) setReplayMs(startMs);
               setPlaying((p) => !p);
             }}
             className="cursor-pointer text-sky-300 hover:text-sky-200"
@@ -732,7 +711,7 @@ export default function Globe3DView({
             {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
           </button>
           <span className="font-mono text-[10px] text-zinc-300">
-            {replayMs !== null ? fmtTime(replayMs) : "LIVE — 09:50:00Z"}
+            {replayMs !== null ? fmtTime(replayMs) : `LIVE — ${fmtTime(endMs)}`}
           </span>
           <div className="flex items-center gap-1">
             {[30, 60, 120].map((s) => (
@@ -755,36 +734,36 @@ export default function Globe3DView({
           max={endMs}
           step={30_000}
           value={replayMs ?? endMs}
-          onChange={(e) => handleTimeScrub(Number(e.target.value))}
+          onChange={(e) => setReplayMs(Number(e.target.value))}
           className="h-1 w-full accent-sky-400"
         />
         <div className="mt-1 flex items-center justify-between text-[8px] text-zinc-600">
           <span>{fmtTime(startMs)}</span>
-          <span>{frame ? `${frame.visibleEvents.length} evidence events` : "—"}</span>
+          <span>{`${frame.visibleEvents.length} evidence events`}</span>
           <span>{fmtTime(endMs)}</span>
         </div>
       </div>
 
-      {/* Selection HUD — spill or vessel summary (panel has detail) */}
+      {/* Selection HUD — spill or event summary (panel has detail) */}
       {selection?.kind === "spill" && incident && (
-        <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded border border-orange-500/40 bg-[#050a12]/92 px-3 py-1.5">
+        <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded border border-orange-500/40 bg-[#050a12]/90 px-3 py-1.5">
           <div className="flex items-center gap-2 text-[10px]">
             <Target className="size-3.5 text-orange-400" />
             <span className="font-semibold text-zinc-100">{incident.label}</span>
             <span className="font-mono text-orange-400">{incident.confidence.score}%</span>
-            <span className="text-zinc-500">· click for panel detail</span>
+            <span className="text-zinc-500">· {incident.polygon.areaKm2} km²</span>
           </div>
         </div>
       )}
       {selection?.kind === "event" && (
-        <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded border border-amber-300/40 bg-[#050a12]/92 px-3 py-1.5 text-[10px] text-amber-200">
+        <div className="absolute left-1/2 top-3 z-20 max-w-md -translate-x-1/2 rounded border border-amber-300/40 bg-[#050a12]/90 px-3 py-1.5 text-[10px] text-amber-200">
           {EVIDENCE_EVENTS.find((e) => e.id === selection.eventId)?.detail}
         </div>
       )}
 
       {/* Correlation mini-HUD */}
       {selCorrelation && selectedVessel && (
-        <div className="absolute right-3 top-3 z-20 w-56 rounded border border-violet-400/30 bg-[#050a12]/92 p-2.5">
+        <div className="absolute right-3 top-3 z-20 w-56 rounded border border-violet-400/30 bg-[#050a12]/90 p-2.5">
           <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-violet-300">
             <Ship className="size-3" /> Potential source correlation
           </div>
@@ -792,15 +771,21 @@ export default function Globe3DView({
           <div className="mt-1.5 space-y-0.5 text-[9px] text-zinc-400">
             <div className="flex justify-between">
               <span>Distance from spill</span>
-              <span className="font-mono text-zinc-200">{selCorrelation.distanceKm.toFixed(1)} km</span>
+              <span className="font-mono text-zinc-200">
+                {selCorrelation.distanceKm.toFixed(1)} km
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Hours before detection</span>
-              <span className="font-mono text-zinc-200">{selCorrelation.hoursBeforeDetection.toFixed(1)} h</span>
+              <span className="font-mono text-zinc-200">
+                {selCorrelation.hoursBeforeDetection.toFixed(1)} h
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Track ∩ area</span>
-              <span className="font-mono text-zinc-200">{selCorrelation.trackIntersectsArea ? "YES" : "NO"}</span>
+              <span className="font-mono text-zinc-200">
+                {selCorrelation.trackIntersectsArea ? "YES" : "NO"}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Correlation</span>

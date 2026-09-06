@@ -1,6 +1,8 @@
 // MARIS — Main Dashboard
 // Orchestrates the complete investigation interface
 import { useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router";
+import { Orbit } from "lucide-react";
 import MapView from "@/components/maris/MapView";
 import Sidebar from "@/components/maris/Sidebar";
 import Header from "@/components/maris/Header";
@@ -41,6 +43,7 @@ const INITIAL_LAYERS: MapLayer[] = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   // Investigation state
   const [state, setState] = useState<InvestigationState>({
     incident: null,
@@ -285,6 +288,18 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* 3D Intelligence bridge */}
+          {hasData && !state.isAnalyzing && (
+            <button
+              onClick={() => navigate("/3d-intelligence")}
+              className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded border border-orange-500/50 bg-orange-500/10 px-2.5 py-1.5 text-[10px] font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
+              title="Open the spatial investigation environment"
+            >
+              <Orbit className="size-3.5" />
+              3D Intelligence
+            </button>
           )}
 
           {/* Map legend */}

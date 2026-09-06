@@ -1,6 +1,7 @@
 // maris — Scientific SAR Imagery Viewer
 // A dedicated remote-sensing workstation for viewing and analysing SAR data
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router";
 import {
   AlertTriangle,
   ChevronDown,
@@ -9,6 +10,7 @@ import {
   EyeOff,
   Maximize2,
   Minimize2,
+  Orbit,
   RotateCcw,
   ZoomIn,
   ZoomOut,
@@ -204,6 +206,7 @@ function drawDetectionOverlay(
 // ─── MAIN SAR VIEWER COMPONENT ─────────────────────────────────────
 
 export default function SarViewer({ onBack }: SarViewerProps) {
+  const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showOverlay, setShowOverlay] = useState(true);
@@ -342,6 +345,15 @@ export default function SarViewer({ onBack }: SarViewerProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Open in 3D — bridges SAR detection to the spatial investigation view */}
+          <button
+            onClick={() => navigate("/3d-intelligence")}
+            className="flex items-center gap-1.5 rounded border border-orange-500/50 bg-orange-500/10 px-2 py-1 text-[9px] font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
+            title="Open this detection in the 3D Intelligence environment"
+          >
+            <Orbit className="size-3" />
+            Open in 3D
+          </button>
           {/* Zoom controls */}
           <div className="flex items-center gap-0.5 rounded border border-sky-200/10 bg-zinc-900/50">
             <button onClick={handleZoomOut} className="p-1 text-zinc-500 hover:text-zinc-300">
@@ -461,6 +473,15 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                     <div key={i} className="text-[8px] text-zinc-500">• {f}</div>
                   ))}
                 </div>
+                {selectedDetection.classification === "possible_oil" && (
+                  <button
+                    onClick={() => navigate("/3d-intelligence")}
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-orange-500/50 bg-orange-500/10 px-2 py-1.5 text-[9px] font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
+                  >
+                    <Orbit className="size-3" />
+                    Open in 3D
+                  </button>
+                )}
               </div>
             </div>
           )}
