@@ -137,7 +137,6 @@ export default function Globe3DView({
       infoBox: false,
       selectionIndicator: false,
       requestRenderMode: false,
-      imageryProvider: false as unknown as Cesium.ImageryProvider,
       baseLayer: Cesium.ImageryLayer.fromProviderAsync(
         Cesium.TileMapServiceImageryProvider.fromUrl(
           Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"),
@@ -282,7 +281,7 @@ export default function Globe3DView({
         const lon =
           cy +
           ((z.rKm * jitter) / (111 * Math.cos((cx * Math.PI) / 180))) * Math.sin(brg);
-        pts.push(Cesium.Cesium3DTileset === undefined ? undefined as never : Cesium.Cartesian3.fromDegrees(lon, lat));
+        pts.push(Cesium.Cartesian3.fromDegrees(lon, lat));
       }
       ents.add({
         polygon: {
@@ -629,6 +628,14 @@ export default function Globe3DView({
     new Date(ms).toLocaleTimeString("en-GB", { hour12: false, timeZone: "UTC" }) + "Z";
 
   // ── ERROR STATE ────────────────────────────────────────────────────
+  const selCorrelation = useMemo(() => {
+    if (!selectedVesselMmsi || !incident) return null;
+    const v = vessels.find((vv) => vv.mmsi === selectedVesselMmsi);
+    const attr = attributions.find((a) => a.vesselId === selectedVesselMmsi);
+    if (!v || !attr) return null;
+    return computeCorrelation(v, incident.polygon.center, attr.overallScore);
+  }, [selectedVesselMmsi, incident, vessels, attributions]);
+
   if (error) {
     return (
       <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#050a12]">
@@ -646,14 +653,6 @@ export default function Globe3DView({
     </div>
     );
   }
-
-  const selCorrelation = useMemo(() => {
-    if (!selectedVesselMmsi || !incident) return null;
-    const v = vessels.find((vv) => vv.mmsi === selectedVesselMmsi);
-    const attr = attributions.find((a) => a.vesselId === selectedVesselMmsi);
-    if (!v || !attr) return null;
-    return computeCorrelation(v, incident.polygon.center, attr.overallScore);
-  }, [selectedVesselMmsi, incident, vessels, attributions]);
 
   const selectedVessel = vessels.find((v) => v.mmsi === selectedVesselMmsi) ?? null;
 
