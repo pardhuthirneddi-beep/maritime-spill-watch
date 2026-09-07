@@ -8,7 +8,7 @@
 
 import { v } from "convex/values";
 import { action, internalAction } from "./_generated/server";
-import { auth } from "./auth";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
@@ -50,7 +50,7 @@ export const buildContext = action({
     timeline: v.any(),
   },
   handler: async (ctx, args) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Not authenticated");
 
     const lines: string[] = [];
@@ -142,7 +142,7 @@ export const streamChat = action({
     ),
   },
   handler: async (ctx, { sessionId, question, context, history }) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Not authenticated");
 
     const apiKey = process.env.GROQ_API_KEY;

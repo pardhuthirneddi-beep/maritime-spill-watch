@@ -1,6 +1,7 @@
 // MARIS — AI Analyst: reactive message log for the chat panel
-// The node action that calls Experiential Labs lives in aiAnalyst.ts ("use node").
+// The node action that calls Groq lives in aiAnalyst.ts ("use node").
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { query, mutation, internalMutation } from "./_generated/server";
 import { auth } from "./auth";
 
@@ -8,7 +9,7 @@ import { auth } from "./auth";
 export const getMessages = query({
   args: { sessionId: v.string() },
   handler: async (ctx, { sessionId }) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (userId === null) return [];
 
     return await ctx.db
@@ -29,7 +30,7 @@ export const appendUserMessage = internalMutation({
     contextDigest: v.string(),
   },
   handler: async (ctx, { sessionId, content, contextDigest }) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Not authenticated");
 
     const id = await ctx.db.insert("analystMessages", {
@@ -52,7 +53,7 @@ export const beginAssistantMessage = internalMutation({
     replyToId: v.id("analystMessages"),
   },
   handler: async (ctx, { sessionId, replyToId }) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Not authenticated");
 
     const id = await ctx.db.insert("analystMessages", {
@@ -104,7 +105,7 @@ export const finishAssistantMessage = internalMutation({
 export const clearSession = mutation({
   args: { sessionId: v.string() },
   handler: async (ctx, { sessionId }) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Not authenticated");
 
     const docs = await ctx.db
