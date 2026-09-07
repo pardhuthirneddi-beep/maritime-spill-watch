@@ -1,5 +1,5 @@
 // MARIS — AI Analyst panel: streaming chat grounded in the live investigation
-// data, powered by the Experiential Labs API via a Convex node action.
+// data, powered by Groq (free tier) via a Convex node action.
 import { useEffect, useRef, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { Sparkles, Send, Trash2, Loader2, AlertTriangle } from "lucide-react";
@@ -116,7 +116,7 @@ export default function AnalystPanel({
             AI Analyst
           </span>
           <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-medium text-amber-400">
-            claude-fable-5.1
+            llama-3.3-70b · groq
           </span>
         </div>
         {hasConversation && (
@@ -274,7 +274,7 @@ export default function AnalystPanel({
           </button>
         </div>
         <div className="mt-1.5 text-[8px] text-zinc-600">
-          Powered by Experiential Labs · grounded in demonstration data ·
+          Powered by Groq (Llama 3.3 70B) · grounded in demonstration data ·
           decision support, not a legal determination
         </div>
       </div>
