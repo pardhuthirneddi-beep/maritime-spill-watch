@@ -8,7 +8,6 @@
 
 import { v } from "convex/values";
 import { action, internalAction } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
@@ -37,7 +36,38 @@ const GUARDRAIL_REFUSAL =
   "I can only help with questions about this oil-spill investigation. " +
   "That request is outside the analyst's scope.";
 
-/** Serializes the investigation state into a compact, model-readable digest. */
+/**
+ * Ensures the user message exists (persisted by the client beforehand when
+ * possible) and creates the assistant placeholder replying to it. Returns
+ * the assistant message id to stream into.
+ */
+// ctx is typed loosely on purpose: the generated GenericActionCtx type makes
+// runMutation's overloads impossible to express here without importing
+// deployment-specific generated types.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureUserAndBegin(ctx: any, opts: {
+  sessionId: string;
+  trimmed: string;
+  context: string;
+  userMessageId?: string;
+}): Promise<any> {
+  let replyToId: string;
+  if (opts.userMessageId) {
+    replyToId = opts.userMessageId;
+  } else {
+    const digest =
+      opts.context.length > 96 ? opts.context.slice(0, 96) + "…" : opts.context;
+    replyToId = (await ctx.runMutation(internal.analyst.appendUserMessage, {
+      sessionId: opts.sessionId,
+      content: opts.trimmed,
+      contextDigest: digest,
+    }));
+  }
+  return await ctx.runMutation(internal.analyst.beginAssistantMessage, {
+    sessionId: opts.sessionId,
+    replyToId,
+  });
+}/** Serializes the investigation state into a compact, model-readable digest. */
 export const buildContext = action({
   args: {
     incident: v.any(),
@@ -50,8 +80,9 @@ export const buildContext = action({
     timeline: v.any(),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) throw new Error("Not authenticated");
+    // Pure serializer of client-supplied args (no DB access) — no auth
+    // needed; the data arrives from the client either way.
+    void ctx;
 
     const lines: string[] = [];
 
@@ -128,12 +159,13 @@ export const buildContext = action({
   },
 });
 
-/** Streams a chat completion from Experiential Labs into the message log. */
+/** Streams a chat completion from Groq into the message log. */
 export const streamChat = action({
   args: {
     sessionId: v.string(),
     question: v.string(),
     context: v.string(),
+    userMessageId: v.optional(v.id("analystMessages")),
     history: v.array(
       v.object({
         role: v.union(v.literal("user"), v.literal("assistant")),
@@ -141,10 +173,10 @@ export const streamChat = action({
       }),
     ),
   },
-  handler: async (ctx, { sessionId, question, context, history }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) throw new Error("Not authenticated");
-
+  handler: async (
+    ctx,
+    { sessionId, question, context, userMessageId, history },
+  ) => {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       throw new Error(
@@ -164,16 +196,12 @@ export const streamChat = action({
       );
     }
     if (MISUSE_PATTERNS.some((p) => p.test(trimmed))) {
-      const digest =
-        context.length > 96 ? context.slice(0, 96) + "…" : context;
-      const userMessageId = await ctx.runMutation(
-        internal.analyst.appendUserMessage,
-        { sessionId, content: trimmed, contextDigest: digest },
-      );
-      const refusalId = await ctx.runMutation(
-        internal.analyst.beginAssistantMessage,
-        { sessionId, replyToId: userMessageId },
-      );
+      const refusalId = await ensureUserAndBegin(ctx, {
+        sessionId,
+        trimmed,
+        context,
+        userMessageId,
+      });
       // Write the refusal directly (no stream needed).
       await ctx.runMutation(internal.analyst.appendChunk, {
         messageId: refusalId,
@@ -219,16 +247,12 @@ export const streamChat = action({
     }
 
     if (guardScore >= GUARD_THRESHOLD) {
-      const digest =
-        context.length > 96 ? context.slice(0, 96) + "…" : context;
-      const userMessageId = await ctx.runMutation(
-        internal.analyst.appendUserMessage,
-        { sessionId, content: trimmed, contextDigest: digest },
-      );
-      const refusalId = await ctx.runMutation(
-        internal.analyst.beginAssistantMessage,
-        { sessionId, replyToId: userMessageId },
-      );
+      const refusalId = await ensureUserAndBegin(ctx, {
+        sessionId,
+        trimmed,
+        context,
+        userMessageId,
+      });
       await ctx.runMutation(internal.analyst.appendChunk, {
         messageId: refusalId,
         chunk: GUARDRAIL_REFUSAL,
@@ -239,17 +263,15 @@ export const streamChat = action({
       return;
     }
 
-    // 1. Persist the user message + placeholder assistant message.
-    const digest =
-      context.length > 96 ? context.slice(0, 96) + "…" : context;
-    const userMessageId = await ctx.runMutation(
-      internal.analyst.appendUserMessage,
-      { sessionId, content: trimmed, contextDigest: digest },
-    );
-    const assistantMessageId = await ctx.runMutation(
-      internal.analyst.beginAssistantMessage,
-      { sessionId, replyToId: userMessageId },
-    );
+    // 1. Begin the assistant reply. The user message is normally already
+    // persisted by the client (addUserMessage) so it stays visible no matter
+    // what happens here; fall back to persisting it if not provided.
+    const assistantMessageId = await ensureUserAndBegin(ctx, {
+      sessionId,
+      trimmed,
+      context,
+      userMessageId,
+    });
 
     // 2. Call the Groq API (OpenAI-compatible streaming SSE).
     const systemPrompt = [

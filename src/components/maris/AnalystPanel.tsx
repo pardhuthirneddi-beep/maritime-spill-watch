@@ -5,6 +5,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { Sparkles, Send, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import type {
   OilSpillIncident,
   AisVessel,
@@ -51,15 +52,18 @@ export default function AnalystPanel({
     () => `maris-analyst-${crypto.randomUUID()}`,
   );
   const [input, setInput] = useState("");
+  const [pending, setPending] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const messages = useQuery(api.analyst.getMessages, { sessionId }) ?? [];
   const buildContext = useAction(api.aiAnalyst.buildContext);
   const streamChat = useAction(api.aiAnalyst.streamChat);
+  const addUserMessage = useMutation(api.analyst.addUserMessage);
   const clearSession = useMutation(api.analyst.clearSession);
 
-  const isLoading = messages.some((m) => m.streaming);
-  const hasConversation = messages.length > 0;
+  const isLoading = pending || messages.some((m) => m.streaming);
+  const hasConversation = messages.length > 0 || localError !== null;
   const hasSnapshot =
     incident !== null &&
     (attributions.length > 0 || driftResult !== null);
@@ -77,20 +81,47 @@ export default function AnalystPanel({
     const question = text.trim();
     if (!question || isLoading || isAnalyzing) return;
 
-    setInput("");
+    // Block duplicate submissions immediately.
+    setPending(true);
+    setLocalError(null);
 
-    // Build the snapshot server-side, then stream the answer.
     try {
-      const context = await buildContext({
-        incident,
-        vessels,
-        attributions,
-        anomalies,
-        environmental,
-        driftResult,
-        hyperspectral,
-        timeline,
-      });
+      // 1. Persist the user message FIRST — it stays visible no matter
+      // what happens downstream (snapshot build, provider call, etc.).
+      let userMessageId: Id<"analystMessages">;
+      try {
+        userMessageId = await addUserMessage({ sessionId, content: question });
+        setInput("");
+      } catch (err) {
+        setLocalError(
+          `Message could not be saved: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return;
+      }
+
+      // 2. Build the investigation snapshot server-side.
+      let context: string;
+      try {
+        context = await buildContext({
+          incident,
+          vessels,
+          attributions,
+          anomalies,
+          environmental,
+          driftResult,
+          hyperspectral,
+          timeline,
+        });
+      } catch (err) {
+        setLocalError(
+          `Could not build the investigation snapshot: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return;
+      }
 
       const history = messages
         .filter((m) => !m.streaming && !m.error && m.content.length > 0)
@@ -100,9 +131,26 @@ export default function AnalystPanel({
           content: m.content,
         }));
 
-      await streamChat({ sessionId, question, context, history });
-    } catch (err) {
-      console.error("AI Analyst error:", err);
+      // 3. Stream the answer. Provider failures are persisted by the action
+      // as an error message; action-level failures surface below.
+      try {
+        await streamChat({
+          sessionId,
+          question,
+          context,
+          userMessageId,
+          history,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setLocalError(
+          msg.includes("GROQ_API_KEY")
+            ? "AI service is not configured (missing API key)."
+            : `AI request failed: ${msg}`,
+        );
+      }
+    } finally {
+      setPending(false);
     }
   };
 
@@ -154,10 +202,10 @@ export default function AnalystPanel({
                 <button
                   key={p}
                   onClick={() => void send(p)}
-                  disabled={!hasSnapshot || isAnalyzing}
+                  disabled={!hasSnapshot || isAnalyzing || isLoading}
                   className={cn(
                     "w-full rounded border px-3 py-2 text-left text-[10px] transition-colors",
-                    hasSnapshot && !isAnalyzing
+                    hasSnapshot && !isAnalyzing && !isLoading
                       ? "cursor-pointer border-sky-200/10 bg-zinc-900/30 text-zinc-300 hover:border-zinc-700 hover:text-zinc-100"
                       : "cursor-not-allowed border-sky-200/5 bg-zinc-900/20 text-zinc-600",
                   )}
@@ -225,6 +273,19 @@ export default function AnalystPanel({
             )}
           </div>
         ))}
+
+        {localError && (
+          <div className="rounded border border-red-500/30 bg-red-500/5 p-2.5">
+            <div className="mb-1 flex items-center gap-1.5 text-[8px] font-semibold uppercase tracking-wider text-amber-400">
+              <Sparkles className="size-2.5" />
+              Analyst
+            </div>
+            <div className="flex items-start gap-1.5 text-[11px] leading-relaxed text-red-300">
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+              {localError}
+            </div>
+          </div>
+        )}
 
         {isAnalyzing && (
           <div className="rounded border border-sky-200/10 bg-zinc-900/30 p-2.5 text-[10px] text-zinc-500">

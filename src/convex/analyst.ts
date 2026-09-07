@@ -70,8 +70,7 @@ export const appendUserMessage = internalMutation({
     contextDigest: v.string(),
   },
   handler: async (ctx, { sessionId, content, contextDigest }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) throw new Error("Not authenticated");
+    const userId = await resolveAnalystUser(ctx);
 
     const id = await ctx.db.insert("analystMessages", {
       sessionId,
@@ -86,6 +85,34 @@ export const appendUserMessage = internalMutation({
   },
 });
 
+/**
+ * Public: persists the user's question immediately, BEFORE any AI call.
+ * Guarantees the message stays visible even if the snapshot build or the
+ * provider call fails. The id is passed to streamChat so the assistant
+ * reply links back to this message.
+ */
+export const addUserMessage = mutation({
+  args: {
+    sessionId: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx, { sessionId, content }) => {
+    const userId = await resolveAnalystUser(ctx);
+    const trimmed = content.trim().slice(0, 2000);
+    if (!trimmed) throw new Error("Question is empty.");
+
+    const id = await ctx.db.insert("analystMessages", {
+      sessionId,
+      userId,
+      role: "user",
+      content: trimmed,
+      streaming: false,
+      error: false,
+    });
+    return id;
+  },
+});
+
 /** Creates the placeholder assistant message the action streams into. */
 export const beginAssistantMessage = internalMutation({
   args: {
@@ -93,8 +120,7 @@ export const beginAssistantMessage = internalMutation({
     replyToId: v.id("analystMessages"),
   },
   handler: async (ctx, { sessionId, replyToId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) throw new Error("Not authenticated");
+    const userId = await resolveAnalystUser(ctx);
 
     const id = await ctx.db.insert("analystMessages", {
       sessionId,
@@ -145,8 +171,7 @@ export const finishAssistantMessage = internalMutation({
 export const clearSession = mutation({
   args: { sessionId: v.string() },
   handler: async (ctx, { sessionId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) throw new Error("Not authenticated");
+    const userId = await resolveAnalystUser(ctx);
 
     const docs = await ctx.db
       .query("analystMessages")
