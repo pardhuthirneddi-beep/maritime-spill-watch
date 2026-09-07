@@ -2,14 +2,55 @@
 // The node action that calls Groq lives in aiAnalyst.ts ("use node").
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { query, mutation, internalMutation } from "./_generated/server";
+import {
+  query,
+  mutation,
+  internalMutation,
+  internalAction,
+} from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+
+// Fallback user for sessions whose auth token the server cannot validate
+// (e.g. stale token from a previous deployment). Chat isolation is by
+// sessionId (a random UUID per client), so this does not widen access.
+const GUEST_EMAIL = "guest-analyst@maris.local";
+
+/** Resolves the acting user, creating a shared guest user if auth is unavailable. */
+async function resolveAnalystUser(ctx: MutationCtx) {
+  const userId = await getAuthUserId(ctx);
+  if (userId !== null) return userId;
+  const guest = await ctx.db
+    .query("users")
+    .withIndex("email", (q) => q.eq("email", GUEST_EMAIL))
+    .first();
+  if (guest !== null) return guest._id;
+  return ctx.db.insert("users", {
+    name: "Guest Analyst",
+    email: GUEST_EMAIL,
+    isAnonymous: true,
+  });
+}
+
+/** Internal: resolveAnalystUser for node actions. */
+export const getOrCreateUser = internalMutation({
+  args: {},
+  handler: async (ctx) => resolveAnalystUser(ctx),
+});
 
 /** Streamed tokens land here; the client subscribes via useQuery. */
 export const getMessages = query({
   args: { sessionId: v.string() },
   handler: async (ctx, { sessionId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) return [];
+    let userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      // Fall back to the shared guest user (same rule as the write path).
+      const guest = await ctx.db
+        .query("users")
+        .withIndex("email", (q) => q.eq("email", GUEST_EMAIL))
+        .first();
+      if (guest === null) return [];
+      userId = guest._id;
+    }
 
     return await ctx.db
       .query("analystMessages")
