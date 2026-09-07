@@ -80,7 +80,7 @@ export default function Sidebar({
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <h1 className="text-[11px] font-semibold tracking-[0.24em] text-slate-100 lowercase">
+            <h1 className="text-[11px] font-semibold tracking-[0.24em] text-slate-100 uppercase">
               maris
             </h1>
             <p className="text-[8px] text-zinc-500 leading-none">
