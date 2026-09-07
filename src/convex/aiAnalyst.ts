@@ -291,6 +291,10 @@ export const streamChat = action({
             model: MODEL,
             stream: true,
             messages,
+            // gpt-oss is a reasoning model; keep hidden reasoning minimal so
+            // answers stream fast (reasoning tokens are never shown).
+            reasoning_effort: "low",
+            max_tokens: 1500,
           }),
         },
       );
