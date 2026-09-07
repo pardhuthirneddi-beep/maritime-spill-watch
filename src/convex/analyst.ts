@@ -3,7 +3,6 @@
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { query, mutation, internalMutation } from "./_generated/server";
-import { auth } from "./auth";
 
 /** Streamed tokens land here; the client subscribes via useQuery. */
 export const getMessages = query({
