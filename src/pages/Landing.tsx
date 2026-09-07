@@ -62,7 +62,7 @@ export default function Landing() {
               <Anchor />
             </div>
             <div className="leading-none">
-              <div className="text-[12px] font-semibold tracking-[0.28em] lowercase text-slate-100">
+              <div className="text-[12px] font-semibold tracking-[0.28em] uppercase text-slate-100">
                 maris
               </div>
               <div className="mt-0.5 hidden text-[8px] font-mono uppercase tracking-[0.18em] text-slate-500 sm:block">
