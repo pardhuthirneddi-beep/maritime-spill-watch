@@ -12,7 +12,9 @@ import { auth } from "./auth";
 import { internal } from "./_generated/api";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = "openai/gpt-oss-120b";
+const GUARD_MODEL = "meta-llama/llama-prompt-guard-2-86m";
+const GUARD_THRESHOLD = 0.5; // prompt-injection score above this → refuse
 const MAX_HISTORY = 12; // last messages replayed to the model
 const MAX_QUESTION_LENGTH = 2000; // hard cap on user input size
 
@@ -183,6 +185,60 @@ export const streamChat = action({
       return;
     }
 
+    // 1b. Model-based prompt-injection guard (Groq's free
+    // llama-prompt-guard-2 classifier). Catches paraphrased attacks the
+    // regex list misses. On failure → refuse, nothing reaches the model.
+    let guardScore = 0;
+    try {
+      const guardRes = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: GUARD_MODEL,
+          stream: false,
+          messages: [{ role: "user", content: trimmed }],
+          max_tokens: 8,
+        }),
+      });
+      if (guardRes.ok) {
+        const data = (await guardRes.json()) as {
+          choices?: { message?: { content?: string } }[];
+        };
+        guardScore = parseFloat(
+          data.choices?.[0]?.message?.content?.trim() ?? "0",
+        );
+        if (Number.isNaN(guardScore)) guardScore = 0;
+      }
+      // If the guard call itself fails, fail open — the regex list and the
+      // system-prompt guardrails still apply.
+    } catch {
+      // fail open; see comment above
+    }
+
+    if (guardScore >= GUARD_THRESHOLD) {
+      const digest =
+        context.length > 96 ? context.slice(0, 96) + "…" : context;
+      const userMessageId = await ctx.runMutation(
+        internal.analyst.appendUserMessage,
+        { sessionId, content: trimmed, contextDigest: digest },
+      );
+      const refusalId = await ctx.runMutation(
+        internal.analyst.beginAssistantMessage,
+        { sessionId, replyToId: userMessageId },
+      );
+      await ctx.runMutation(internal.analyst.appendChunk, {
+        messageId: refusalId,
+        chunk: GUARDRAIL_REFUSAL,
+      });
+      await ctx.runMutation(internal.analyst.finishAssistantMessage, {
+        messageId: refusalId,
+      });
+      return;
+    }
+
     // 1. Persist the user message + placeholder assistant message.
     const digest =
       context.length > 96 ? context.slice(0, 96) + "…" : context;
@@ -218,7 +274,7 @@ export const streamChat = action({
     const messages = [
       { role: "system", content: systemPrompt },
       ...history.slice(-MAX_HISTORY),
-      { role: "user", content: question },
+      { role: "user", content: trimmed },
     ];
 
     let response: Response;
