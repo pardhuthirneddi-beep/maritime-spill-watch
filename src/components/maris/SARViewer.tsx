@@ -28,6 +28,8 @@ import {
   DEMO_SAR_ANALYSIS,
   DEMO_INCIDENT,
 } from "@/data/demoData";
+import { ensureIncidentFromDetection } from "@/data/incidentStore";
+import { useIncidentStore } from "@/hooks/useIncidents";
 import type { SarScene, SarDetectionRegion, SarAnalysisResult, LatLon } from "@/data/types";
 
 interface SarViewerProps {
@@ -223,6 +225,32 @@ export default function SarViewer({ onBack }: SarViewerProps) {
   const scene: SarScene = DEMO_SAR_SCENE;
   const detections: SarDetectionRegion[] = DEMO_SAR_DETECTIONS;
   const analysis: SarAnalysisResult = DEMO_SAR_ANALYSIS;
+
+  // SAR → Incident pipeline: the primary possible-oil detection registers
+  // with the centralized incident store. Deduplication guarantees the same
+  // observation maps to the EXISTING incident (never a duplicate).
+  useEffect(() => {
+    const primary = detections.find((d) => d.classification === "possible_oil");
+    if (!primary) return;
+    ensureIncidentFromDetection({
+      detectionId: primary.id,
+      latitude: primary.center[0],
+      longitude: primary.center[1],
+      areaKm2: primary.areaKm2,
+      confidence: primary.confidence,
+      detectionSource: `${scene.satellite} SAR`,
+      sceneId: scene.sceneId,
+      sourceIncidentId: DEMO_INCIDENT.id,
+      detectedAt: scene.acquisitionTime,
+    });
+  }, [detections, scene]);
+
+  // Linked incident state (centralized store).
+  const incidentStore = useIncidentStore();
+  const linkedIncident =
+    incidentStore.incidents.find(
+      (i) => i.detectionId === detections[0]?.id,
+    ) ?? null;
 
   // Draw the SAR image
   const drawCanvas = useCallback(() => {

@@ -1,12 +1,19 @@
 // MARIS — Main Dashboard
 // Orchestrates the complete investigation interface
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { Orbit } from "lucide-react";
 import MapView from "@/components/maris/MapView";
 import Sidebar from "@/components/maris/Sidebar";
 import Header from "@/components/maris/Header";
 import RightPanel from "@/components/maris/RightPanel";
+import NotificationRail from "@/components/maris/NotificationRail";
+import { IncidentCommandStrip } from "@/components/maris/IncidentCommand";
+import { useIncidentStore } from "@/hooks/useIncidents";
+import {
+  deriveEstimatedVolumeM3,
+  recordIncidentUpdate,
+} from "@/data/incidentStore";
 import {
   DEMO_INCIDENT,
   DEMO_VESSELS,
@@ -17,6 +24,7 @@ import {
   DEMO_HYPERSPECTRAL,
   DEMO_TIMELINE,
 } from "@/data/demoData";
+// DEMO_HYPERSPECTRAL imported once above; type-only import below.
 import {
   generateJsonReport,
   generatePdfReport,
@@ -63,6 +71,51 @@ export default function Dashboard() {
   const [layers, setLayers] = useState<MapLayer[]>(INITIAL_LAYERS);
   const [activeView, setActiveView] = useState<PanelView>("overview");
 
+  // ── CENTRALIZED INCIDENT STATE (shared source of truth) ──────────
+  // Seeds deterministically from the demo dataset; every analysis step
+  // below records a real continuous update against the active incident.
+  const incidentStore = useIncidentStore();
+  const activeManagedIncident =
+    incidentStore.incidents.find(
+      (i) => i.id === incidentStore.activeIncidentId,
+    ) ?? incidentStore.incidents[0] ?? null;
+
+  // Continuous incident updates driven by the investigation pipeline.
+  // Each analysis milestone updates the SAME incident (dedup guarantees
+  // re-runs never duplicate history) and bumps last_updated_at.
+  const recordedStepsRef = useRef<Set<number>>(new Set());
+  const recordStep = useCallback(
+    (
+      progress: number,
+      eventType: string,
+      description: string,
+      patch?: {
+        status?: Parameters<typeof recordIncidentUpdate>[1]["status"];
+        areaKm2?: number | null;
+        estimatedVolumeM3?: number | null;
+        confidence?: number | null;
+        summary?: string;
+      },
+    ) => {
+      const store = incidentStoreRef.current;
+      const inc =
+        store.incidents.find((i) => i.id === store.activeIncidentId) ??
+        store.incidents[0];
+      if (!inc) return;
+      recordIncidentUpdate(inc.id, {
+        eventType,
+        description,
+        source: "MARIS analysis engine",
+        severity: "info",
+        silent: true,
+        ...patch,
+      });
+    },
+    [],
+  );
+  const incidentStoreRef = useRef(incidentStore);
+  incidentStoreRef.current = incidentStore;
+
   // Analysis simulation steps
   const ANALYSIS_STEPS = [
     { step: "Loading SAR satellite imagery...", progress: 5 },
@@ -97,10 +150,39 @@ export default function Dashboard() {
       hyperspectral: null,
       timeline: [],
     }));
+    recordedStepsRef.current.clear();
 
     for (const { step, progress } of ANALYSIS_STEPS) {
       setState((s) => ({ ...s, analysisStep: step, analysisProgress: progress }));
       await new Promise((r) => setTimeout(r, 350));
+
+      // Continuous incident updates at each analysis milestone. The same
+      // incident is updated every run — never duplicated.
+      if (!recordedStepsRef.current.has(progress)) {
+        recordedStepsRef.current.add(progress);
+        if (progress === 35)
+          recordStep(35, "GEOMETRY", "SAR geometry updated — spill polygon generated", {
+            status: "under_investigation",
+          });
+        if (progress === 40)
+          recordStep(40, "AREA", "Spill area recalculated — 14.7 km², 8.2 km length", {
+            areaKm2: DEMO_INCIDENT.polygon.areaKm2,
+          });
+        if (progress === 60)
+          recordStep(60, "AIS", "AIS correlation updated — 5 candidates in vicinity");
+        if (progress === 78)
+          recordStep(78, "DRIFT", "Drift reconstruction updated — probable origin backtracked");
+        if (progress === 94) {
+          const vol = deriveEstimatedVolumeM3(
+            DEMO_INCIDENT.polygon.areaKm2,
+            DEMO_HYPERSPECTRAL,
+          );
+          recordStep(94, "EVIDENCE", `HSI evidence added — thickness classes derived${vol !== null ? `, estimated volume ${vol.toLocaleString("en-US")} m³` : ""}`, {
+            estimatedVolumeM3: vol ?? undefined,
+            status: "impact_assessment",
+          });
+        }
+      }
 
       // Load data at specific progress points
       if (progress === 40) {
@@ -111,6 +193,20 @@ export default function Dashboard() {
       }
       if (progress === 70) {
         setState((s) => ({ ...s, attributions: DEMO_ATTRIBUTIONS }));
+        // Candidate ranking is a lifecycle milestone + operational alert.
+        const store = incidentStoreRef.current;
+        const inc =
+          store.incidents.find((i) => i.id === store.activeIncidentId) ??
+          store.incidents[0];
+        if (inc) {
+          recordIncidentUpdate(inc.id, {
+            eventType: "CANDIDATES",
+            description: `Candidate vessel ranking updated — ${DEMO_ATTRIBUTIONS[0]?.vesselName ?? "candidate"} leads source likelihood at ${DEMO_ATTRIBUTIONS[0]?.overallScore ?? "—"}% (investigation indicator)`,
+            source: "MARIS attribution engine",
+            severity: "important",
+            status: "candidates_ranked",
+          });
+        }
       }
       if (progress === 78) {
         setState((s) => ({
@@ -132,6 +228,25 @@ export default function Dashboard() {
       }
     }
 
+    // Lifecycle completion: the operational end-state — never "confirmed".
+    {
+      const store = incidentStoreRef.current;
+      const inc =
+        store.incidents.find((i) => i.id === store.activeIncidentId) ??
+        store.incidents[0];
+      if (inc) {
+        recordIncidentUpdate(inc.id, {
+          eventType: "STATUS",
+          description: "Investigation evidence compiled — incident REQUIRES VALIDATION",
+          source: "MARIS Incident Command",
+          severity: "important",
+          status: "requires_validation",
+          summary:
+            "Evidence compiled for review. Possible oil slick — requires validation.",
+        });
+      }
+    }
+
     setState((s) => ({
       ...s,
       isAnalyzing: false,
@@ -139,7 +254,7 @@ export default function Dashboard() {
       analysisProgress: 100,
     }));
     setActiveView("overview");
-  }, []);
+  }, [recordStep]);
 
   const handleLayerToggle = useCallback((id: string) => {
     setLayers((prev) =>
@@ -224,6 +339,24 @@ export default function Dashboard() {
             environmental={state.environmental}
             onVesselSelect={handleVesselSelect}
           />
+
+          {/* Operational notifications — non-blocking command-center rail */}
+          <NotificationRail
+            notifications={incidentStore.notifications}
+            activeIncidentId={incidentStore.activeIncidentId}
+            onOpenIncident={() => setActiveView("overview")}
+          />
+
+          {/* Incident Command strip — compact operational header */}
+          {activeManagedIncident && (
+            <div className="absolute right-3 top-3 z-20 w-80">
+              <IncidentCommandStrip
+                incident={activeManagedIncident}
+                incidents={incidentStore.incidents}
+                onSelectIncident={() => setActiveView("overview")}
+              />
+            </div>
+          )}
 
           {/* Pre-investigation overlay */}
           {!hasData && !state.isAnalyzing && (

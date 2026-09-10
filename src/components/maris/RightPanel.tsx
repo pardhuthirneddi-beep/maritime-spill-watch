@@ -23,6 +23,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import AnalystPanel from "./AnalystPanel";
+import {
+  IncidentCommandStrip,
+  IncidentTimelineView,
+} from "./IncidentCommand";
+import { useIncidentStore } from "@/hooks/useIncidents";
 import type {
   OilSpillIncident,
   AisVessel,
@@ -76,6 +81,12 @@ export default function RightPanel({
   onDownloadJson,
 }: RightPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+  // Centralized incident state — the shared source of truth.
+  const incidentStore = useIncidentStore();
+  const activeManagedIncident =
+    incidentStore.incidents.find(
+      (i) => i.id === incidentStore.activeIncidentId,
+    ) ?? incidentStore.incidents[0] ?? null;
 
   if (collapsed) {
     return (
@@ -98,7 +109,7 @@ export default function RightPanel({
           {view === "attribution" && "Source Attribution"}
           {view === "drift" && "Drift Analysis"}
           {view === "thickness" && "Oil Thickness"}
-          {view === "timeline" && "Incident Timeline"}
+          {view === "timeline" && "Incident Command"}
           {view === "report" && "Investigation Report"}
           {view === "satellite" && "Satellite Analysis"}
           {view === "analyst" && "AI Analyst"}
@@ -168,7 +179,9 @@ export default function RightPanel({
         {view === "thickness" && hyperspectral && (
           <ThicknessPanel hyperspectral={hyperspectral} />
         )}
-        {view === "timeline" && <TimelinePanel timeline={timeline} />}
+        {view === "timeline" && (
+          <IncidentTimelinePanel managedIncident={activeManagedIncident} timeline={timeline} />
+        )}
         {view === "satellite" && incident && (
           <SatellitePanel incident={incident} environmental={environmental} />
         )}
@@ -193,6 +206,39 @@ export default function RightPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+// ─── INCIDENT COMMAND (timeline view) ──────────────────────────────
+
+function IncidentTimelinePanel({
+  managedIncident,
+  timeline,
+}: {
+  managedIncident: ReturnType<typeof useIncidentStore>["incidents"][number] | null;
+  timeline: TimelineEvent[];
+}) {
+  return (
+    <div className="space-y-3 p-3">
+      <IncidentCommandStrip incident={managedIncident} incidents={[]} />
+      <IncidentTimelineView incident={managedIncident} />
+      {/* Legacy investigation chronology (vessel/detection/analysis events) */}
+      {timeline.length > 0 && (
+        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+            Analysis Chronology
+          </div>
+          <div className="space-y-1.5">
+            {timeline.map((event, i) => (
+              <div key={i} className="flex items-baseline gap-2">
+                <span className="font-mono text-[9px] text-zinc-600">{event.time}</span>
+                <span className="text-[9px] text-zinc-400">{event.event}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

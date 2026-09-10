@@ -356,12 +356,13 @@ export function recordIncidentUpdate(
   const incident = s.incidents.find((i) => i.id === incidentId);
   if (!incident) return;
 
-  // Idempotency: identical consecutive event → field refresh only.
-  const last = incident.timeline[incident.timeline.length - 1];
-  const duplicate =
-    last &&
-    last.eventType === update.eventType &&
-    last.description === update.description;
+  // Idempotency: an identical event anywhere in the timeline (e.g. the
+  // investigation re-run) → field refresh only, no duplicate history.
+  const duplicate = incident.timeline.some(
+    (e) =>
+      e.eventType === update.eventType &&
+      e.description === update.description,
+  );
   const now = new Date().toISOString();
 
   const statusChanged =
