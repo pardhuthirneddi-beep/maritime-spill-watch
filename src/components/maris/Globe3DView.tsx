@@ -823,17 +823,31 @@ export default function Globe3DView({
     );
 
     const removeListener = viewer.scene.preRender.addEventListener(() => {
-      if (!trafficOnRef.current) return;
+      // Guard: the effect that destroys the viewer unmounts before this
+      // one, so the scene may already be gone during teardown.
+      if (!trafficOnRef.current || viewer.isDestroyed()) return;
       updateTrafficLayer(viewer.scene, simMsRef.current, EPOCH_MS);
     });
 
     return () => {
       removeListener();
-      destroyTrafficLayer(viewer.scene);
+      // Only dispose primitives while the viewer is still alive — calling
+      // scene accessors on a destroyed viewer throws.
+      if (!viewer.isDestroyed()) destroyTrafficLayer(viewer.scene);
     };
-    // Rebuild selection wiring only when identity changes.
+    // Selection changes are pushed via setTrafficSelection below (no
+    // teardown of the 536 pooled primitives on every click).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, selectedVesselMmsi, attributions]);
+  }, [ready]);
+
+  // Selection/candidate updates flow into the traffic layer without
+  // rebuilding its primitive pools.
+  useEffect(() => {
+    setTrafficSelection(
+      selectedVesselMmsi,
+      attributions.find((a) => a.rank === 1)?.vesselId ?? null,
+    );
+  }, [selectedVesselMmsi, attributions]);
 
   // ── SELECTION FOCUS ────────────────────────────────────────────────
   useEffect(() => {

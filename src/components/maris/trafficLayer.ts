@@ -200,14 +200,19 @@ export function createTrafficLayer(scene: Cesium.Scene): void {
   slots.forEach((slot, i) => pickMap.set(slot.symbol, fleet[i].mmsi));
 }
 
-/** Remove the traffic layer (viewer teardown). */
+/** Remove the traffic layer (viewer teardown). Safe on a dead scene. */
 export function destroyTrafficLayer(scene: Cesium.Scene): void {
   if (!handles) return;
-  scene.primitives.remove(handles.symbols);
-  scene.primitives.remove(handles.brackets);
-  scene.primitives.remove(handles.labels);
-  scene.primitives.remove(handles.trails);
+  try {
+    scene.primitives.remove(handles.symbols);
+    scene.primitives.remove(handles.brackets);
+    scene.primitives.remove(handles.labels);
+    scene.primitives.remove(handles.trails);
+  } catch {
+    // Viewer already torn down — nothing to release.
+  }
   handles = null;
+  pickMap.clear();
 }
 
 const scratchCarto = new Cesium.Cartographic();
