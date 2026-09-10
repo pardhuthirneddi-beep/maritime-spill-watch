@@ -62,6 +62,11 @@ import {
   resolveHeadingDeg,
   type VesselSymbolState,
 } from "@/components/maris/vesselSymbols";
+import {
+  bracketScale,
+  buildContactLabel,
+  getBracketSprite,
+} from "@/components/maris/trackingOverlays";
 
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
@@ -539,6 +544,10 @@ export default function Globe3DView({
     }
 
     if (isLayerOn("globe_vessels")) {
+      // Label collision avoidance: contacts sharing the same tile cell get
+      // progressively right-shifted labels (deterministic, no jitter).
+      const laneUse = new Map<string, number>();
+
       for (const v of vessels) {
         const pos = frame.positions[v.mmsi];
         if (!pos) continue;
@@ -557,12 +566,13 @@ export default function Globe3DView({
         const cls = classifyVessel(v.vesselType);
         const headingDeg = resolveHeadingDeg(pos.headingDeg, v.heading);
 
+        // ═─ SHIP SYMBOL (top-down silhouette, heading-rotated) ─────────
         const vesselEnt = ds.entities.add({
           position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
           billboard: {
             image: getVesselSymbol(cls, state),
-            // 64px sprite → 22px at normal zoom; selected slightly clearer.
-            scale: sel ? 0.42 : 0.34,
+            // 64px sprite → ~24px at regional zoom; selected slightly clearer.
+            scale: sel ? 0.44 : 0.36,
             // Top-down silhouette: rotation around the view (Z) axis so the
             // bow points along the vessel's course over ground.
             rotation: Cesium.Math.toRadians(-headingDeg),
@@ -570,25 +580,68 @@ export default function Globe3DView({
             verticalOrigin: Cesium.VerticalOrigin.CENTER,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
-          // Name only at regional zoom; detail panel handles the rest.
-          // (Structured so MMSI labels / target boxes can slot in later.)
-          label: {
-            text: v.name,
-            font: "9px 'JetBrains Mono', monospace",
-            fillColor: sel ? COLOR_VESSEL_SEL : Cesium.Color.fromCssColorString("#94a3b8"),
-            showBackground: true,
-            backgroundColor: COLOR_BG.withAlpha(0.82),
-            backgroundPadding: new Cesium.Cartesian2(5, 2),
-            // Offset right of the symbol — evidence stacks above, so the
-            // two annotation families never share the same lane.
-            pixelOffset: new Cesium.Cartesian2(16, -8),
-            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 700_000),
-          },
         });
         tagEntity(vesselEnt, "vessel", v.mmsi);
 
+        // ═─ ACQUISITION BRACKETS — every tracked contact, all states ───
+        // Four separated corner arms centered on the symbol (no heavy
+        // rectangle). Emphasis scales with state; position follows the
+        // vessel through the shared position — never the camera.
+        ds.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+          billboard: {
+            image: getBracketSprite(state),
+            scale: bracketScale(state) * (sel ? 1.15 : 1),
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+
+        // ═─ MMSI-FIRST TRACKING LABEL ──────────────────────────────────
+        // Technical contact label: MMSI primary, name secondary. Shows at
+        // regional zoom so the global view never becomes a wall of text.
+        const cell = `${Math.round(pos.lat * 12)}:${Math.round(pos.lon * 12)}`;
+        const lane = (laneUse.get(cell) ?? 0);
+        laneUse.set(cell, lane + 1);
+
+        const contact = buildContactLabel(v.mmsi, v.name, state);
+        // Primary line — MMSI, state-accented, bold. Always first.
+        const evEnt = ds.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+          label: {
+            text: contact.primary,
+            font: "600 9px 'JetBrains Mono', monospace",
+            fillColor: Cesium.Color.fromCssColorString(contact.primaryColor),
+            showBackground: true,
+            backgroundColor: COLOR_BG.withAlpha(0.78),
+            backgroundPadding: new Cesium.Cartesian2(6, 3),
+            // Beside the brackets; per-cell lane offset separates contacts.
+            pixelOffset: new Cesium.Cartesian2(36 + lane * 12, -16),
+            // Whole-contact visibility window — regional + close.
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 1_200_000),
+          },
+        });
+        tagEntity(evEnt, "vessel", v.mmsi);
+
+        // Secondary line — vessel name, smaller, beneath the MMSI.
+        if (contact.secondary) {
+          ds.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+            label: {
+              text: contact.secondary,
+              font: "8px 'JetBrains Mono', monospace",
+              fillColor: Cesium.Color.fromCssColorString("#8fa3b8"),
+              showBackground: true,
+              backgroundColor: COLOR_BG.withAlpha(0.6),
+              backgroundPadding: new Cesium.Cartesian2(6, 2),
+              pixelOffset: new Cesium.Cartesian2(36 + lane * 12, -5),
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 550_000),
+            },
+          });
+        }
+
         // Course leader line — from the bow along the course over ground.
-        // Reinforces heading for the selected vessel only (clarity, §7);
+        // Reinforces heading for the selected vessel only (clarity);
         // unselected traffic stays clean.
         if (sel) {
           const headingRad = Cesium.Math.toRadians(headingDeg);
