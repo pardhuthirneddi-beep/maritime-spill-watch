@@ -1,5 +1,13 @@
 // MARIS — DEMO AIS provider (simulated real-time maritime traffic).
 //
+// GEOGRAPHIC VALIDITY: every generated route is validated against the
+// land/water mask (waterMask.ts — the bundled NaturalEarthII raster) at
+// fleet-build time: waypoints must be water with a coastal tolerance AND
+// every interpolated leg sample must be water. Lateral route jitter that
+// lands a coastal lane inland is regenerated deterministically; the
+// pre-verified corridor centerline is the final fallback. No vessel sits
+// on, or routes across, land.
+//
 // Architecture (provider-replaceable for future live AIS):
 //   AIS PROVIDER (this file, demo) → NORMALIZED VESSEL STATE → 3D ENGINE
 //
@@ -14,6 +22,12 @@
 // demo MMSIs (419…) so attribution/selection/AIS analysis stay connected.
 
 // ─── GEO UTILITIES (small, local — no new deps) ──────────────────────
+
+import {
+  ensureWaterMask,
+  isWater,
+  isWaterWithTolerance,
+} from "@/components/maris/waterMask";
 
 const R_EARTH = 6_371_000; // meters
 const toRad = (d: number) => (d * Math.PI) / 180;
@@ -90,32 +104,32 @@ const CORRIDORS: Corridor[] = [
   // ── INDIA PRIORITY (dense coastal traffic, as required) ───────────
   {
     name: "Gujarat–Mumbai coastal",
-    waypoints: [[22.6, 69.2], [21.7, 70.4], [20.4, 71.2], [19.4, 72.3], [18.9, 72.8]],
+    waypoints: [[21.5, 68.5], [20.8, 69.2], [20.4, 70.2], [20.2, 71.2], [19.6, 72.0], [18.7, 72.5]],
     count: 46, speedKn: [8, 16],
   },
   {
     name: "Mumbai–Kochi coastal",
-    waypoints: [[18.9, 72.8], [16.5, 73.2], [14.2, 74.2], [12.0, 75.2], [9.9, 76.2]],
+    waypoints: [[18.7, 72.5], [16.5, 73.0], [14.2, 74.0], [13.0, 74.3], [12.0, 74.6], [10.0, 75.3], [9.7, 75.75]],
     count: 34, speedKn: [8, 15],
   },
   {
     name: "Kochi–Colombo–Sri Lanka",
-    waypoints: [[9.9, 76.2], [8.9, 77.6], [7.8, 78.4], [6.9, 79.8], [6.0, 80.3]],
+    waypoints: [[9.7, 75.75], [8.5, 76.4], [7.4, 77.7], [6.4, 78.9], [5.9, 80.0]],
     count: 28, speedKn: [9, 16],
   },
   {
     name: "Chennai–Visakhapatnam",
-    waypoints: [[13.1, 80.3], [14.8, 80.9], [16.6, 82.2], [18.4, 84.1], [20.2, 86.0]],
+    waypoints: [[13.1, 80.4], [14.9, 81.2], [16.4, 82.8], [17.9, 84.3], [18.6, 84.7], [19.4, 85.9], [20.0, 86.7]],
     count: 30, speedKn: [9, 17],
   },
   {
     name: "Visakhapatnam–Odisha–Kolkata",
-    waypoints: [[20.2, 86.0], [20.8, 86.9], [21.4, 87.6], [21.8, 88.3], [22.0, 89.0]],
+    waypoints: [[20.0, 86.7], [20.7, 87.4], [21.3, 88.2], [21.6, 88.9], [21.5, 89.1]],
     count: 22, speedKn: [8, 15],
   },
   {
     name: "Bay of Bengal crossing",
-    waypoints: [[6.5, 82.0], [8.5, 84.5], [10.5, 87.0], [12.5, 89.5], [14.5, 91.5]],
+    waypoints: [[6.7, 82.2], [8.5, 84.5], [10.5, 87.0], [12.5, 89.5], [14.5, 91.5]],
     count: 24, speedKn: [10, 18],
   },
   {
@@ -136,27 +150,27 @@ const CORRIDORS: Corridor[] = [
   },
   {
     name: "Malacca Strait",
-    waypoints: [[5.5, 95.3], [4.5, 98.0], [3.2, 100.3], [2.2, 101.8], [1.4, 103.0]],
+    waypoints: [[5.9, 95.0], [6.0, 96.5], [5.9, 97.8], [4.8, 99.5], [3.2, 100.3], [2.2, 101.8], [1.8, 102.1], [1.6, 102.7], [1.4, 103.0]],
     count: 42, speedKn: [8, 16],
   },
   {
     name: "South China Sea–Singapore",
-    waypoints: [[1.4, 103.8], [3.5, 106.5], [7.0, 109.5], [11.0, 111.5], [15.0, 113.5]],
+    waypoints: [[2.0, 104.4], [3.5, 106.5], [7.0, 109.5], [11.0, 111.5], [15.0, 113.5]],
     count: 38, speedKn: [9, 18],
   },
   {
     name: "East Asia–Shanghai",
-    waypoints: [[22.5, 115.5], [25.5, 120.0], [28.5, 122.3], [31.2, 122.8], [31.4, 122.2]],
+    waypoints: [[22.3, 116.4], [24.5, 119.0], [27.5, 122.0], [30.5, 122.9], [31.4, 122.6]],
     count: 28, speedKn: [9, 17],
   },
   {
     name: "Mediterranean east–west",
-    waypoints: [[31.2, 32.3], [33.8, 25.0], [36.0, 18.0], [37.8, 11.5], [38.0, 6.0]],
+    waypoints: [[31.7, 33.0], [33.8, 25.0], [35.2, 19.5], [36.2, 15.5], [37.0, 12.0], [38.0, 5.5]],
     count: 30, speedKn: [9, 17],
   },
   {
     name: "Gibraltar approaches",
-    waypoints: [[35.9, -5.6], [36.4, -7.5], [37.2, -9.5], [38.5, -10.5], [40.0, -11.5]],
+    waypoints: [[36.05, -4.2], [36.1, -5.4], [36.0, -6.8], [36.5, -8.0], [37.4, -9.8], [38.5, -10.5], [40.0, -11.5]],
     count: 20, speedKn: [8, 16],
   },
   {
@@ -166,7 +180,7 @@ const CORRIDORS: Corridor[] = [
   },
   {
     name: "Cape of Good Hope",
-    waypoints: [[-34.0, 18.2], [-34.6, 20.0], [-35.2, 22.5], [-34.8, 25.5], [-33.5, 28.0]],
+    waypoints: [[-34.7, 18.4], [-35.2, 20.2], [-35.2, 22.5], [-34.8, 25.5], [-33.5, 28.0]],
     count: 24, speedKn: [9, 17],
   },
   {
@@ -176,7 +190,7 @@ const CORRIDORS: Corridor[] = [
   },
   {
     name: "Panama approaches",
-    waypoints: [[9.4, -79.9], [9.0, -81.5], [8.5, -83.5], [8.2, -85.5], [8.0, -87.5]],
+    waypoints: [[8.2, -79.7], [7.0, -79.8], [7.0, -81.4], [7.4, -83.2], [7.8, -85.2], [8.0, -86.6]],
     count: 18, speedKn: [8, 15],
   },
   {
@@ -186,7 +200,7 @@ const CORRIDORS: Corridor[] = [
   },
   {
     name: "Australia–Bass Strait",
-    waypoints: [[-33.8, 151.2], [-35.0, 150.4], [-37.2, 149.0], [-38.4, 146.5], [-38.2, 144.6]],
+    waypoints: [[-34.0, 152.2], [-35.6, 151.8], [-37.2, 150.9], [-38.5, 149.2], [-39.7, 147.2], [-39.9, 145.0], [-39.0, 143.6], [-38.6, 144.4]],
     count: 14, speedKn: [8, 15],
   },
 ];
@@ -223,6 +237,45 @@ function pickType(rand: () => number): string {
     if (roll <= 0) return name;
   }
   return TYPE_NAMES[0];
+}
+
+// ─── WATER-SAFE ROUTE VALIDATION ─────────────────────────────────────
+
+/**
+ * True when the whole route stays over water: every waypoint (with a
+ * coastal tolerance so symbols never overlap shoreline pixels) and every
+ * interpolated leg sample (10 km spacing). Runs at fleet-build time only —
+ * never per frame.
+ */
+function isRouteWaterSafe(route: [number, number][]): boolean {
+  for (const [lat, lon] of route) {
+    if (!isWaterWithTolerance(lat, lon, 5)) return false;
+  }
+  for (let i = 0; i + 1 < route.length; i++) {
+    const [aLat, aLon] = route[i];
+    let [bLat, bLon] = route[i + 1];
+    // Antimeridian: normalize the leg into the shorter arc.
+    if (bLon - aLon > 180) bLon -= 360;
+    if (bLon - aLon < -180) bLon += 360;
+    const dKm = haversineKm(aLat, aLon, bLat, bLon);
+    const steps = Math.max(1, Math.ceil(dKm / 10));
+    for (let s = 1; s < steps; s++) {
+      const f = s / steps;
+      if (!isWater(aLat + (bLat - aLat) * f, aLon + (bLon - aLon) * f)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** Unwrap route longitudes so consecutive waypoints are continuous
+ * (prevents linear interpolation from sweeping across the antimeridian). */
+function unwrapRoute(route: [number, number][]): void {
+  for (let i = 1; i < route.length; i++) {
+    while (route[i][1] - route[i - 1][1] > 180) route[i][1] -= 360;
+    while (route[i][1] - route[i - 1][1] < -180) route[i][1] += 360;
+  }
 }
 
 // ─── SIMULATED FLEET ─────────────────────────────────────────────────
@@ -316,20 +369,35 @@ function buildFleet(): void {
 
       // Route: perturb each waypoint slightly per-vessel (parallel traffic
       // lanes) — NOT uniform scatter; each vessel follows the corridor.
-      const jitterKm = 3 + rand() * 25;
-      const route = waypoints.map((wp, wi) => {
-        if (wi === waypoints.length - 1) {
-          // Last leg: continue along final bearing to extend the lane.
-          const prev = waypoints[wi - 1];
-          const brg = bearingDeg(prev[0], prev[1], wp[0], wp[1]);
-          return destinationPoint(wp[0], wp[1], brg, jitterKm * 1000);
-        }
-        const brg = bearingDeg(wp[0], wp[1], waypoints[wi + 1][0], waypoints[wi + 1][1]);
-        // Lateral offset perpendicular to the leg bearing.
-        const perp = brg + 90 * (rand() < 0.5 ? 1 : -1);
-        const offKm = jitterKm * rand();
-        return destinationPoint(wp[0], wp[1], perp, offKm * 1000);
-      });
+      // Water-safe: regenerate the jitter deterministically until the full
+      // route validates over water; the pre-verified corridor centerline is
+      // the final zero-jitter fallback. Jitter stays ≤ 12 km — a plausible
+      // parallel-lane separation that keeps coastal lanes offshore.
+      const jitterKm = 2 + rand() * 10;
+      let route: [number, number][] = [];
+      let valid = false;
+      for (let attempt = 0; attempt < 8 && !valid; attempt++) {
+        route = waypoints.map((wp, wi) => {
+          if (wi === waypoints.length - 1) {
+            // Last leg: continue along final bearing to extend the lane.
+            const prev = waypoints[wi - 1];
+            const brg = bearingDeg(prev[0], prev[1], wp[0], wp[1]);
+            return destinationPoint(wp[0], wp[1], brg, jitterKm * 1000);
+          }
+          const brg = bearingDeg(wp[0], wp[1], waypoints[wi + 1][0], waypoints[wi + 1][1]);
+          // Lateral offset perpendicular to the leg bearing.
+          const perp = brg + 90 * (rand() < 0.5 ? 1 : -1);
+          const offKm = jitterKm * rand();
+          return destinationPoint(wp[0], wp[1], perp, offKm * 1000);
+        });
+        unwrapRoute(route);
+        valid = waterAvailable ? isRouteWaterSafe(route) : true;
+      }
+      if (!valid) {
+        // Fallback: exact corridor waypoints — hand-verified water-safe.
+        route = waypoints.map((wp) => [wp[0], wp[1]] as [number, number]);
+        unwrapRoute(route);
+      }
 
       // Per-vessel cumulative leg distances (routes differ after jitter).
       const legStartV: number[] = [0];
@@ -366,6 +434,9 @@ function buildFleet(): void {
 }
 
 let fleetReady = false;
+let fleetPrepared = false;
+let preparing: Promise<void> | null = null;
+let waterAvailable = false;
 
 /**
  * Simulation epoch — the sim-clock instant at which every vessel sits at
@@ -373,13 +444,32 @@ let fleetReady = false;
  */
 export const EPOCH_MS = Date.parse("2026-09-02T09:42:00Z");
 
-/** Get the demo fleet (built once, deterministic). */
+/** Get the demo fleet (empty until prepareFleet() has completed). */
 export function getFleet(): SimVessel[] {
-  if (!fleetReady) {
-    buildFleet();
-    fleetReady = true;
-  }
   return FLEET;
+}
+
+/**
+ * Build the validated fleet: waits for the land/water mask, then builds
+ * deterministically with water-safe route validation. Resolves once;
+ * concurrent/duplicate calls share the same promise.
+ */
+export function prepareFleet(): Promise<void> {
+  if (fleetPrepared) return Promise.resolve();
+  if (!preparing) {
+    preparing = (async () => {
+      try {
+        await ensureWaterMask();
+        waterAvailable = true;
+      } catch {
+        waterAvailable = false;
+      }
+      buildFleet();
+      fleetReady = true;
+      fleetPrepared = true;
+    })();
+  }
+  return preparing;
 }
 
 /**

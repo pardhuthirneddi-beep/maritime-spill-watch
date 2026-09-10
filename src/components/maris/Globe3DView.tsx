@@ -73,7 +73,7 @@ import {
   setTrafficSelection,
   updateTrafficLayer,
 } from "@/components/maris/trafficLayer";
-import { EPOCH_MS, getFleet, positionAt } from "@/components/maris/trafficSim";
+import { EPOCH_MS, getFleet, positionAt, prepareFleet } from "@/components/maris/trafficSim";
 import { trafficMmsiFromPick } from "@/components/maris/trafficLayer";
 
 if (!("cesiumBaseUrlSet" in window)) {
@@ -816,21 +816,28 @@ export default function Globe3DView({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !ready) return;
-    createTrafficLayer(viewer.scene);
-    setTrafficSelection(
-      selectedVesselMmsi,
-      attributions.find((a) => a.rank === 1)?.vesselId ?? null,
-    );
-
-    const removeListener = viewer.scene.preRender.addEventListener(() => {
-      // Guard: the effect that destroys the viewer unmounts before this
-      // one, so the scene may already be gone during teardown.
-      if (!trafficOnRef.current || viewer.isDestroyed()) return;
-      updateTrafficLayer(viewer.scene, simMsRef.current, EPOCH_MS);
+    let cancelled = false;
+    let removeListener: (() => void) | null = null;
+    // The fleet is built AFTER the land/water mask loads, so every route
+    // is validated water-safe before any vessel is rendered.
+    void prepareFleet().then(() => {
+      if (cancelled || viewer.isDestroyed()) return;
+      createTrafficLayer(viewer.scene);
+      setTrafficSelection(
+        selectedVesselMmsi,
+        attributions.find((a) => a.rank === 1)?.vesselId ?? null,
+      );
+      removeListener = viewer.scene.preRender.addEventListener(() => {
+        // Guard: the effect that destroys the viewer unmounts before this
+        // one, so the scene may already be gone during teardown.
+        if (!trafficOnRef.current || viewer.isDestroyed()) return;
+        updateTrafficLayer(viewer.scene, simMsRef.current, EPOCH_MS);
+      });
     });
 
     return () => {
-      removeListener();
+      cancelled = true;
+      removeListener?.();
       // Only dispose primitives while the viewer is still alive — calling
       // scene accessors on a destroyed viewer throws.
       if (!viewer.isDestroyed()) destroyTrafficLayer(viewer.scene);

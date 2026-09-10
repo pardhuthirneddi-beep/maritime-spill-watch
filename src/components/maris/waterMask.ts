@@ -37,18 +37,23 @@ function decodeTile(ctx: CanvasRenderingContext2D, col: number, row: number): vo
   const img = new Image();
   img.src = tileUrl(col, row);
   // decode() resolves when the image data is available.
-  return img
+  void img
     .decode()
     .then(() => {
-      ctx.drawImage(img, col * TILE_SIZE, row * TILE_SIZE);
+      // TMS rows are BOTTOM-UP: grid row 0 is the southernmost 45° band,
+      // but our mask canvas is top-down (y=0 = 90°N). Invert the row when
+      // placing tiles (verified against real land points: Delhi, Alaska,
+      // Australia, Sahara all classify as land with this placement).
+      const canvasRow = GRID_Y - 1 - row;
+      ctx.drawImage(img, col * TILE_SIZE, canvasRow * TILE_SIZE);
       const data = ctx.getImageData(
         col * TILE_SIZE,
-        row * TILE_SIZE,
+        canvasRow * TILE_SIZE,
         TILE_SIZE,
         TILE_SIZE,
       ).data;
       const ox = col * TILE_SIZE;
-      const oy = row * TILE_SIZE;
+      const oy = canvasRow * TILE_SIZE;
       for (let y = 0; y < TILE_SIZE; y++) {
         for (let x = 0; x < TILE_SIZE; x++) {
           const i = (y * TILE_SIZE + x) * 4;
@@ -66,7 +71,7 @@ function decodeTile(ctx: CanvasRenderingContext2D, col: number, row: number): vo
       // Decode failure: mark this tile as water (fail-open — better a rare
       // offshore-bound demo vessel than a fleet that never spawns).
       const ox = col * TILE_SIZE;
-      const oy = row * TILE_SIZE;
+      const oy = (GRID_Y - 1 - row) * TILE_SIZE;
       for (let y = 0; y < TILE_SIZE; y++) {
         for (let x = 0; x < TILE_SIZE; x++) {
           waterMask![(oy + y) * MASK_W + (ox + x)] = 1;
@@ -102,6 +107,16 @@ export function waterMaskReady(): boolean {
 }
 
 /**
+ * Documented navigable waterways narrower than one pixel (~19 km) of the
+ * level-2 raster — the color test reads them as land. Rectangle overrides
+ * [latMin, latMax, lonMin, lonMax] marking genuinely navigable water.
+ */
+const NAVIGABLE_OVERRIDES: [number, number, number, number][] = [
+  // Strait of Gibraltar (≈14 km wide at the Tarifa narrows).
+  [35.75, 36.25, -6.35, -5.05],
+];
+
+/**
  * Land/water test at lat/lon. Returns true when over ocean/sea.
  * Falls back to "water" (fail-open) before the mask finishes loading.
  * Layout verified against the raster: tiles are 45° cells (8×4), the
@@ -110,6 +125,9 @@ export function waterMaskReady(): boolean {
  */
 export function isWater(lat: number, lon: number): boolean {
   if (!waterMask) return true;
+  for (const [la1, la2, lo1, lo2] of NAVIGABLE_OVERRIDES) {
+    if (lat >= la1 && lat <= la2 && lon >= lo1 && lon <= lo2) return true;
+  }
   const x = Math.floor(((lon + 180) / 360) * MASK_W);
   const y = Math.floor(((90 - lat) / 180) * MASK_H);
   const px = Math.min(MASK_W - 1, Math.max(0, x));
