@@ -56,6 +56,12 @@ import * as Cesium from "cesium";
 import "cesium/Source/Widgets/widgets.css";
 import { createMarisImageryProvider } from "@/components/maris/globeImageryFallback";
 import { disposeStarfield, installStarfield } from "@/components/maris/starfield";
+import {
+  classifyVessel,
+  getVesselSymbol,
+  resolveHeadingDeg,
+  type VesselSymbolState,
+} from "@/components/maris/vesselSymbols";
 
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
@@ -68,7 +74,6 @@ Cesium.Ion.defaultAccessToken = "";
 const COLOR_BG = Cesium.Color.fromCssColorString("#050a12");
 const COLOR_SPILL = Cesium.Color.fromCssColorString("#fb923c");
 const COLOR_CORRIDOR = Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.8);
-const COLOR_VESSEL = Cesium.Color.fromCssColorString("#60a5fa");
 const COLOR_VESSEL_SEL = Cesium.Color.fromCssColorString("#22d3ee");
 const COLOR_TRACK = Cesium.Color.fromCssColorString("#60a5fa").withAlpha(0.55);
 const COLOR_TRACK_SEL = Cesium.Color.fromCssColorString("#22d3ee");
@@ -539,18 +544,34 @@ export default function Globe3DView({
         if (!pos) continue;
         const sel = selectedVesselMmsi === v.mmsi;
 
+        // Vessel state from the EXISTING systems only:
+        //  - selected → click selection
+        //  - candidate → rank-1 attribution record (no invented candidates)
+        //  - everyone else → NORMAL traffic
+        const attr = attributions.find((a) => a.vesselId === v.mmsi);
+        const state: VesselSymbolState = sel
+          ? "SELECTED"
+          : attr && attr.rank === 1
+            ? "CANDIDATE"
+            : "NORMAL";
+        const cls = classifyVessel(v.vesselType);
+        const headingDeg = resolveHeadingDeg(pos.headingDeg, v.heading);
+
         const vesselEnt = ds.entities.add({
           position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
-          point: {
-            // Hierarchy: selected vessel is the largest marker on scene.
-            pixelSize: sel ? 12 : 8,
-            color: sel ? COLOR_VESSEL_SEL : COLOR_VESSEL,
-            outlineColor: Cesium.Color.BLACK.withAlpha(0.6),
-            outlineWidth: 1,
+          billboard: {
+            image: getVesselSymbol(cls, state),
+            // 64px sprite → 22px at normal zoom; selected slightly clearer.
+            scale: sel ? 0.42 : 0.34,
+            // Top-down silhouette: rotation around the view (Z) axis so the
+            // bow points along the vessel's course over ground.
+            rotation: Cesium.Math.toRadians(-headingDeg),
+            alignedAxis: Cesium.Cartesian3.UNIT_Z,
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           // Name only at regional zoom; detail panel handles the rest.
-          // (Structured so ship symbols / target boxes can slot in later.)
+          // (Structured so MMSI labels / target boxes can slot in later.)
           label: {
             text: v.name,
             font: "9px 'JetBrains Mono', monospace",
@@ -558,29 +579,33 @@ export default function Globe3DView({
             showBackground: true,
             backgroundColor: COLOR_BG.withAlpha(0.82),
             backgroundPadding: new Cesium.Cartesian2(5, 2),
-            // Offset right of the marker — evidence stacks above, so the
+            // Offset right of the symbol — evidence stacks above, so the
             // two annotation families never share the same lane.
-            pixelOffset: new Cesium.Cartesian2(14, -8),
+            pixelOffset: new Cesium.Cartesian2(16, -8),
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 700_000),
           },
         });
         tagEntity(vesselEnt, "vessel", v.mmsi);
 
-        // Heading leader line (course vector)
-        const headingRad = Cesium.Math.toRadians(pos.headingDeg);
-        const distDeg = 0.012;
-        const tipLat = pos.lat + distDeg * Math.cos(headingRad);
-        const tipLon = pos.lon + distDeg * Math.sin(headingRad);
-        ds.entities.add({
-          polyline: {
-            positions: [
-              Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
-              Cesium.Cartesian3.fromDegrees(tipLon, tipLat, 80),
-            ],
-            width: 1.2,
-            material: sel ? COLOR_VESSEL_SEL : COLOR_VESSEL,
-          },
-        });
+        // Course leader line — from the bow along the course over ground.
+        // Reinforces heading for the selected vessel only (clarity, §7);
+        // unselected traffic stays clean.
+        if (sel) {
+          const headingRad = Cesium.Math.toRadians(headingDeg);
+          const distDeg = 0.012;
+          const tipLat = pos.lat + distDeg * Math.cos(headingRad);
+          const tipLon = pos.lon + distDeg * Math.sin(headingRad);
+          ds.entities.add({
+            polyline: {
+              positions: [
+                Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+                Cesium.Cartesian3.fromDegrees(tipLon, tipLat, 80),
+              ],
+              width: 1.2,
+              material: COLOR_VESSEL_SEL,
+            },
+          });
+        }
       }
     }
 
