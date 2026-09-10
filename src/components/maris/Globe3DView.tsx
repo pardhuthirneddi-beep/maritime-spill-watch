@@ -41,15 +41,13 @@ import {
 
 import * as Cesium from "cesium";
 import "cesium/Source/Widgets/widgets.css";
+import { createMarisImageryProvider } from "@/components/maris/globeImageryFallback";
 
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
   (window as unknown as Record<string, unknown>).CESIUM_BASE_URL = "/cesium/";
 }
 Cesium.Ion.defaultAccessToken = "";
-
-const ESRI_IMAGERY =
-  "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 // ─── STYLING CONSTANTS ───────────────────────────────────────────────
 
@@ -160,9 +158,10 @@ export default function Globe3DView({
       });
 
       // Esri satellite imagery replaces the default NaturalEarth fallback.
-      viewer.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({ url: ESRI_IMAGERY, maximumLevel: 18 }),
-      );
+      // Wrapped with the ocean-aware fallback so close-zoom over open water
+      // synthesizes real ancestor tiles instead of Esri's "Map data not
+      // available" placeholder (see globeImageryFallback.ts).
+      viewer.imageryLayers.addImageryProvider(createMarisImageryProvider());
 
       // Scene character: elevated oblique look, no stars, no atmosphere bloom.
       viewer.scene.globe.enableLighting = false;
