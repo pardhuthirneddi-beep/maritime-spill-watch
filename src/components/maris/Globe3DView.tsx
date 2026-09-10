@@ -55,6 +55,7 @@ import {
 import * as Cesium from "cesium";
 import "cesium/Source/Widgets/widgets.css";
 import { createMarisImageryProvider } from "@/components/maris/globeImageryFallback";
+import { disposeStarfield, installStarfield } from "@/components/maris/starfield";
 
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
@@ -214,10 +215,26 @@ export default function Globe3DView({
       // available" placeholder (see globeImageryFallback.ts).
       viewer.imageryLayers.addImageryProvider(createMarisImageryProvider());
 
-      // Scene character: elevated oblique look, no stars, no atmosphere bloom.
+      // Scene character: elevated oblique look, no atmosphere bloom.
       viewer.scene.globe.enableLighting = false;
-      if (viewer.scene.skyBox) viewer.scene.skyBox.show = false;
+      // Deep-space environment: Cesium's bundled Tycho star catalog cubemap
+      // (real astronomical data, served locally from /cesium/) plus a
+      // deterministic procedural point starfield at ~2× Moon distance.
+      // Earth and all intelligence layers render in front naturally.
+      viewer.scene.skyBox = new Cesium.SkyBox({
+        sources: {
+          positiveX: Cesium.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_px.jpg"),
+          negativeX: Cesium.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mx.jpg"),
+          positiveY: Cesium.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_py.jpg"),
+          negativeY: Cesium.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_my.jpg"),
+          positiveZ: Cesium.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_pz.jpg"),
+          negativeZ: Cesium.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mz.jpg"),
+        },
+        show: true,
+      });
+      if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = false;
       viewer.scene.backgroundColor = COLOR_BG;
+      installStarfield(viewer.scene);
       viewer.scene.screenSpaceCameraController.enableTilt = true;
       viewer.scene.screenSpaceCameraController.minimumZoomDistance = 400;
       viewer.scene.screenSpaceCameraController.maximumZoomDistance = 25_000_000;
@@ -276,6 +293,7 @@ export default function Globe3DView({
 
     return () => {
       handler.destroy();
+      disposeStarfield(viewer.scene);
       viewer.destroy();
       viewerRef.current = null;
       staticDsRef.current = null;
