@@ -73,7 +73,8 @@ import {
   setTrafficSelection,
   updateTrafficLayer,
 } from "@/components/maris/trafficLayer";
-import { EPOCH_MS } from "@/components/maris/trafficSim";
+import { EPOCH_MS, getFleet, positionAt } from "@/components/maris/trafficSim";
+import { trafficMmsiFromPick } from "@/components/maris/trafficLayer";
 
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
@@ -288,6 +289,15 @@ export default function Globe3DView({
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
       const picked = viewer.scene.pick(movement.position);
+
+      // Demo-AIS traffic billboards are primitives — resolve via pick map.
+      const trafficMmsi = trafficMmsiFromPick(picked);
+      if (trafficMmsi) {
+        setSelection({ kind: "vessel", mmsi: trafficMmsi });
+        onSelectRef.current(trafficMmsi);
+        return;
+      }
+
       if (Cesium.defined(picked) && picked.id instanceof Cesium.Entity) {
         const entity = picked.id as Cesium.Entity & { marisKind?: string; marisId?: string };
         if (entity.marisKind === "vessel") {
@@ -807,7 +817,10 @@ export default function Globe3DView({
     const viewer = viewerRef.current;
     if (!viewer || !ready) return;
     createTrafficLayer(viewer.scene);
-    setTrafficSelection(selectedVesselMmsi, candidateMmsi);
+    setTrafficSelection(
+      selectedVesselMmsi,
+      attributions.find((a) => a.rank === 1)?.vesselId ?? null,
+    );
 
     const removeListener = viewer.scene.preRender.addEventListener(() => {
       if (!trafficOnRef.current) return;
@@ -820,7 +833,7 @@ export default function Globe3DView({
     };
     // Rebuild selection wiring only when identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, selectedVesselMmsi, candidateMmsi]);
+  }, [ready, selectedVesselMmsi, attributions]);
 
   // ── SELECTION FOCUS ────────────────────────────────────────────────
   useEffect(() => {
@@ -841,7 +854,28 @@ export default function Globe3DView({
           bb.radius * 4,
         ),
       });
-    } else if (selection.kind === "vessel" && frame) {
+    } else if (selection.kind === "vessel") {
+      // Simulated-traffic contacts aren't in the replay frame — resolve
+      // their live position from the demo provider instead.
+      const simVessel = getFleet().find((sv) => sv.mmsi === selection.mmsi);
+      if (simVessel) {
+        const p = positionAt(simVessel, simMsRef.current, EPOCH_MS);
+        viewer.camera.flyToBoundingSphere(
+          new Cesium.BoundingSphere(
+            Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0),
+            4_000,
+          ),
+          {
+            duration: 1.4,
+            offset: new Cesium.HeadingPitchRange(
+              Cesium.Math.toRadians(p.headingDeg - 160),
+              Cesium.Math.toRadians(-24),
+              5_500,
+            ),
+          },
+        );
+        return;
+      }
       const v = vessels.find((vv) => vv.mmsi === selection.mmsi);
       if (v) {
         const pos = frame.positions[v.mmsi];
@@ -1216,6 +1250,11 @@ export default function Globe3DView({
         <span className="h-2.5 w-px bg-white/15" />
         <span className="text-[8px] uppercase tracking-[0.12em] text-zinc-500">
           Simulated real-time
+        </span>
+        <span className="h-2.5 w-px bg-white/15" />
+        <span className="text-[8px] uppercase tracking-[0.12em] text-zinc-500">
+          Last update{" "}
+          <span className="font-mono text-zinc-300">{fmtTime(clockMs)}</span>
         </span>
       </div>
     </div>

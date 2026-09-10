@@ -56,6 +56,17 @@ interface TrafficHandles {
 
 let handles: TrafficHandles | null = null;
 
+/** Billboard → MMSI map for click picking (billboards are primitives, not
+ *  entities, so the host view needs this lookup). */
+const pickMap = new Map<Cesium.Billboard, string>();
+
+/** Resolve a scene.pick result to a simulated vessel MMSI (or null). */
+export function trafficMmsiFromPick(picked: unknown): string | null {
+  const p = picked as { primitive?: unknown } | undefined;
+  if (!p?.primitive) return null;
+  return pickMap.get(p.primitive as Cesium.Billboard) ?? null;
+}
+
 /** Lane offset counter per label cell (collision avoidance). */
 const laneUse = new Map<string, number>();
 
@@ -140,6 +151,9 @@ export function createTrafficLayer(scene: Cesium.Scene): void {
     slots,
     lastTrail: fleet.map(() => [0, 0]),
   };
+
+  // Register the symbol billboards for picking (MMSI lookup).
+  slots.forEach((slot, i) => pickMap.set(slot.symbol, fleet[i].mmsi));
 }
 
 /** Remove the traffic layer (viewer teardown). */

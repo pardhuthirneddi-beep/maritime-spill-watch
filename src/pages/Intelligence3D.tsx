@@ -15,6 +15,7 @@ import {
 import type { Globe3dLayer } from "@/data/globe3dTypes";
 
 const INITIAL_GLOBE_LAYERS: Globe3dLayer[] = [
+  { id: "globe_traffic", label: "Demo AIS Traffic", enabled: true },
   { id: "globe_vessels", label: "Vessels", enabled: true },
   { id: "globe_tracks", label: "Vessel Tracks", enabled: true },
   { id: "globe_spill", label: "Oil Spill", enabled: true },
