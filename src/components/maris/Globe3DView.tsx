@@ -6,14 +6,22 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
-  Eye,
+  Droplets,
+  Layers3,
   Loader2,
   LocateFixed,
-  Play,
+  MapPin,
   Pause,
+  Play,
+  Radar,
   RotateCcw,
+  Route,
+  Satellite,
+  Scan,
   Ship,
   Target,
+  Waves,
+  Waypoints,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -23,9 +31,14 @@ import type {
   OilSpillIncident,
   VesselAttribution,
 } from "@/data/types";
-import type { Globe3dLayer, SceneSelection } from "@/data/globe3dTypes";
+import type {
+  Globe3dLayer,
+  Globe3dLayerId,
+  SceneSelection,
+} from "@/data/globe3dTypes";
 import {
   EVIDENCE_EVENTS,
+  INVESTIGATION_AREA_CENTER,
   buildReplayFrame,
   computeCorrelation,
   investigationAreaPolygon,
@@ -53,16 +66,51 @@ Cesium.Ion.defaultAccessToken = "";
 
 const COLOR_BG = Cesium.Color.fromCssColorString("#050a12");
 const COLOR_SPILL = Cesium.Color.fromCssColorString("#fb923c");
-const COLOR_SPILL_FILL = Cesium.Color.fromCssColorString("#ea580c").withAlpha(0.28);
 const COLOR_CORRIDOR = Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.8);
-const COLOR_AREA = Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.5);
-const COLOR_AREA_FILL = Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.04);
 const COLOR_VESSEL = Cesium.Color.fromCssColorString("#60a5fa");
 const COLOR_VESSEL_SEL = Cesium.Color.fromCssColorString("#22d3ee");
 const COLOR_TRACK = Cesium.Color.fromCssColorString("#60a5fa").withAlpha(0.55);
 const COLOR_TRACK_SEL = Cesium.Color.fromCssColorString("#22d3ee");
-const COLOR_EVIDENCE = Cesium.Color.fromCssColorString("#fbbf24");
-const COLOR_SAR = Cesium.Color.fromCssColorString("#e2e8f0").withAlpha(0.35);
+const COLOR_SAR = Cesium.Color.fromCssColorString("#e2e8f0").withAlpha(0.22);
+
+// ─── WORKSTATION CHROME ──────────────────────────────────────────────
+// Shared panel treatment: hairline border, near-opaque dark surface, subtle
+// elevation. Keeps UI restrained so the Earth stays the hero.
+
+const PANEL =
+  "rounded-md border border-white/10 bg-[#070d16]/90 shadow-lg shadow-black/40 backdrop-blur-sm";
+const PANEL_HEADER =
+  "flex items-center gap-2 border-b border-white/10 px-3 py-2";
+const PANEL_TITLE =
+  "text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-400";
+const SECTION_LABEL =
+  "text-[8px] font-semibold uppercase tracking-[0.18em] text-zinc-500";
+
+/** Layer instrument definitions — icon + accent per intelligence layer. */
+const LAYER_DEFS: {
+  id: Globe3dLayerId;
+  label: string;
+  icon: typeof Ship;
+  accent: string;
+}[] = [
+  { id: "globe_vessels", label: "Vessels", icon: Ship, accent: "text-sky-300" },
+  { id: "globe_tracks", label: "Vessel Tracks", icon: Route, accent: "text-sky-300/70" },
+  { id: "globe_spill", label: "Oil Spill", icon: Droplets, accent: "text-orange-400" },
+  { id: "globe_satellite", label: "SAR Swath", icon: Satellite, accent: "text-slate-300" },
+  { id: "globe_boundaries", label: "Investigation Area", icon: Scan, accent: "text-sky-300/70" },
+  { id: "globe_grid", label: "Evidence Markers", icon: MapPin, accent: "text-amber-300" },
+  { id: "globe_detection_zones", label: "Drift Forecast", icon: Waves, accent: "text-orange-300/80" },
+  { id: "globe_correlation", label: "Source Connection", icon: Waypoints, accent: "text-violet-300" },
+];
+
+/** Evidence category → accent (marker, label and timeline tick share it). */
+const EVENT_COLOR: Record<string, string> = {
+  vessel: "#fbbf24",
+  detection: "#7dd3fc",
+  analysis: "#a78bfa",
+};
+
+const SPEEDS = [1, 3, 10] as const;
 
 // ─── TYPES ───────────────────────────────────────────────────────────
 
@@ -108,6 +156,7 @@ export default function Globe3DView({
   // without wiping entities owned by other effects.
   const staticDsRef = useRef<Cesium.CustomDataSource | null>(null);
   const dynamicDsRef = useRef<Cesium.CustomDataSource | null>(null);
+  const areaDsRef = useRef<Cesium.CustomDataSource | null>(null);
   const onSelectRef = useRef(onVesselSelect);
   onSelectRef.current = onVesselSelect;
 
@@ -116,7 +165,9 @@ export default function Globe3DView({
   const [selection, setSelection] = useState<SceneSelection>(null);
   const [replayMs, setReplayMs] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(60); // sim-minutes per real second
+  // Centralized simulation clock: 1× = real-time (1 sim-ms per real-ms).
+  const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
+
 
   const startMs = useMemo(() => replayStartMs(vessels), [vessels]);
   const endMs = useMemo(() => replayEndMs(vessels), [vessels]);
@@ -177,12 +228,26 @@ export default function Globe3DView({
 
     viewerRef.current = viewer;
 
-    const staticDs = new Cesium.CustomDataSource("maris-static");
-    const dynamicDs = new Cesium.CustomDataSource("maris-dynamic");
-    viewer.dataSources.add(staticDs);
-    viewer.dataSources.add(dynamicDs);
-    staticDsRef.current = staticDs;
-    dynamicDsRef.current = dynamicDs;
+    // Deliberate z-order (bottom → top): area → drift → tracks → spill →
+    // evidence → vessels/selection. Each effect owns exactly one source so
+    // rebuilds never disturb siblings.
+    const dsDefs = [
+      "maris-area",
+      "maris-drift",
+      "maris-tracks",
+      "maris-spill",
+      "maris-evidence",
+      "maris-dynamic",
+    ] as const;
+    const created: Cesium.CustomDataSource[] = [];
+    for (const name of dsDefs) {
+      const ds = new Cesium.CustomDataSource(name);
+      viewer.dataSources.add(ds);
+      created.push(ds);
+    }
+    staticDsRef.current = created[3]; // spill
+    areaDsRef.current = created[0]; // area + drift (beneath spill)
+    dynamicDsRef.current = created[5];
 
     // Click picking
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -215,6 +280,7 @@ export default function Globe3DView({
       viewerRef.current = null;
       staticDsRef.current = null;
       dynamicDsRef.current = null;
+      areaDsRef.current = null;
       setReady(false);
     };
   }, []);
@@ -245,7 +311,76 @@ export default function Globe3DView({
     if (ready && incident) focusInvestigation(2.4);
   }, [ready, incident, focusInvestigation]);
 
-  // ── STATIC SCENE: SPILL + AREA + SAR SWATH + DRIFT ZONES ──────────
+  // ── STATIC SCENE A: INVESTIGATION AREA + DRIFT ZONES (restrained) ──
+  // Rendered beneath the spill: thin boundary, low-opacity fill. Must never
+  // dominate the geographic context.
+  useEffect(() => {
+    const ds = areaDsRef.current;
+    if (!ds || !incident || !ready) return;
+    ds.entities.removeAll();
+
+    if (isLayerOn("globe_boundaries")) {
+      ds.entities.add({
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(
+            investigationAreaPolygon().map(([lat, lon]) =>
+              Cesium.Cartesian3.fromDegrees(lon, lat),
+            ),
+          ),
+          // Restrained geospatial boundary: barely-there fill, crisp edge.
+          material: Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.03),
+          outline: true,
+          outlineColor: Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.45),
+          outlineWidth: 1,
+          height: 0,
+        },
+      });
+      // Corner-free center tick — subtle, not a label.
+      const [acLat, acLon] = INVESTIGATION_AREA_CENTER;
+      ds.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(acLon, acLat, 10),
+        point: {
+          pixelSize: 3,
+          color: Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.5),
+          outlineColor: Cesium.Color.TRANSPARENT,
+          disableDepthTestDistance: 0,
+        },
+      });
+    }
+
+    if (isLayerOn("globe_detection_zones") && driftResult) {
+      for (const p of driftResult.forward) {
+        ds.entities.add({
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(
+              p.polygon.map(([lat, lon]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
+            ),
+            material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.03),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.3),
+            outlineWidth: 1,
+            height: 0,
+          },
+        });
+      }
+      for (const p of driftResult.backtrack) {
+        ds.entities.add({
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(
+              p.polygon.map(([lat, lon]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
+            ),
+            material: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.03),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.3),
+            outlineWidth: 1,
+            height: 0,
+          },
+        });
+      }
+    }
+  }, [ready, incident, driftResult, layers, isLayerOn]);
+
+  // ── STATIC SCENE B: SPILL + SAR SWATH (hero intelligence layer) ────
   useEffect(() => {
     const ds = staticDsRef.current;
     if (!ds || !incident || !ready) return;
@@ -260,12 +395,12 @@ export default function Globe3DView({
               Cesium.Cartesian3.fromDegrees(lon, lat),
             ),
           ),
-          material: COLOR_SPILL_FILL,
+          // Possible slick: subtle fill + thin boundary, flat on the surface.
+          material: Cesium.Color.fromCssColorString("#ea580c").withAlpha(0.14),
           outline: true,
-          outlineColor: COLOR_SPILL,
-          outlineWidth: 2,
+          outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.85),
+          outlineWidth: 1.2,
           height: 0,
-          extrudedHeight: 30,
         },
         position: Cesium.Cartesian3.fromDegrees(
           incident.polygon.center[1],
@@ -273,25 +408,26 @@ export default function Globe3DView({
           200,
         ),
         label: {
-          text: `OS-${incident.incidentNumber}  ·  ${incident.confidence.score}%`,
-          font: "11px 'JetBrains Mono', monospace",
-          fillColor: COLOR_SPILL,
+          text: `OS-${incident.incidentNumber} · CONF ${incident.confidence.score}%`,
+          font: "10px 'JetBrains Mono', monospace",
+          fillColor: Cesium.Color.fromCssColorString("#fdba74"),
           showBackground: true,
-          backgroundColor: COLOR_BG.withAlpha(0.93),
-          backgroundPadding: new Cesium.Cartesian2(6, 4),
-          pixelOffset: new Cesium.Cartesian2(0, -26),
+          backgroundColor: COLOR_BG.withAlpha(0.88),
+          backgroundPadding: new Cesium.Cartesian2(6, 3),
+          pixelOffset: new Cesium.Cartesian2(0, -22),
           style: Cesium.LabelStyle.FILL,
           distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 4_000_000),
         },
       });
       tagEntity(slick, "spill", incident.id);
 
-      // Intensity core — inner zones by thickness class mix.
+      // Intensity core — thickness variation, tiered by zoom so the scene
+      // reads as a slick (not a blob) at overview distance.
       const [cx, cy] = incident.polygon.center;
-      const zones: { rKm: number; color: Cesium.Color }[] = [
-        { rKm: 0.55, color: Cesium.Color.fromCssColorString("#7c2d12").withAlpha(0.75) },
-        { rKm: 1.3, color: Cesium.Color.fromCssColorString("#9a3412").withAlpha(0.5) },
-        { rKm: 2.4, color: Cesium.Color.fromCssColorString("#c2410c").withAlpha(0.28) },
+      const zones: { rKm: number; color: Cesium.Color; maxDist: number }[] = [
+        { rKm: 0.55, color: Cesium.Color.fromCssColorString("#7c2d12").withAlpha(0.5), maxDist: 1_200_000 },
+        { rKm: 1.3, color: Cesium.Color.fromCssColorString("#9a3412").withAlpha(0.3), maxDist: 2_500_000 },
+        { rKm: 2.4, color: Cesium.Color.fromCssColorString("#c2410c").withAlpha(0.16), maxDist: 5_000_000 },
       ];
       for (const z of zones) {
         const pts: Cesium.Cartesian3[] = [];
@@ -310,26 +446,10 @@ export default function Globe3DView({
             material: z.color,
             outline: false,
             height: 2,
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, z.maxDist),
           },
         });
       }
-    }
-
-    if (isLayerOn("globe_boundaries")) {
-      ds.entities.add({
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(
-            investigationAreaPolygon().map(([lat, lon]) =>
-              Cesium.Cartesian3.fromDegrees(lon, lat),
-            ),
-          ),
-          material: COLOR_AREA_FILL,
-          outline: true,
-          outlineColor: COLOR_AREA,
-          outlineWidth: 1.5,
-          height: 0,
-        },
-      });
     }
 
     if (isLayerOn("globe_satellite") && incident.detectionMode === "sar") {
@@ -368,37 +488,7 @@ export default function Globe3DView({
       });
     }
 
-    if (isLayerOn("globe_detection_zones") && driftResult) {
-      for (const p of driftResult.forward) {
-        ds.entities.add({
-          polygon: {
-            hierarchy: new Cesium.PolygonHierarchy(
-              p.polygon.map(([lat, lon]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
-            ),
-            material: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.05),
-            outline: true,
-            outlineColor: Cesium.Color.fromCssColorString("#f97316").withAlpha(0.4),
-            outlineWidth: 1,
-            height: 0,
-          },
-        });
-      }
-      for (const p of driftResult.backtrack) {
-        ds.entities.add({
-          polygon: {
-            hierarchy: new Cesium.PolygonHierarchy(
-              p.polygon.map(([lat, lon]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
-            ),
-            material: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.05),
-            outline: true,
-            outlineColor: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.4),
-            outlineWidth: 1,
-            height: 0,
-          },
-        });
-      }
-    }
-  }, [ready, incident, driftResult, layers, isLayerOn]);
+  }, [ready, incident, layers, isLayerOn]);
 
   // ── DYNAMIC SCENE: TRACKS + VESSELS + CORRELATION + EVIDENCE ──────
   useEffect(() => {
@@ -415,7 +505,7 @@ export default function Globe3DView({
         ds.entities.add({
           polyline: {
             positions,
-            width: sel ? 3 : 1.4,
+            width: sel ? 2.4 : 1.1,
             material: sel
               ? COLOR_TRACK_SEL
               : new Cesium.PolylineDashMaterialProperty({ color: COLOR_TRACK }),
@@ -434,21 +524,26 @@ export default function Globe3DView({
         const vesselEnt = ds.entities.add({
           position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
           point: {
-            pixelSize: sel ? 15 : 9,
+            // Hierarchy: selected vessel is the largest marker on scene.
+            pixelSize: sel ? 12 : 8,
             color: sel ? COLOR_VESSEL_SEL : COLOR_VESSEL,
             outlineColor: Cesium.Color.BLACK.withAlpha(0.6),
             outlineWidth: 1,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
+          // Name only at regional zoom; detail panel handles the rest.
+          // (Structured so ship symbols / target boxes can slot in later.)
           label: {
             text: v.name,
-            font: "10px 'JetBrains Mono', monospace",
-            fillColor: sel ? COLOR_VESSEL_SEL : Cesium.Color.fromCssColorString("#cbd5e1"),
+            font: "9px 'JetBrains Mono', monospace",
+            fillColor: sel ? COLOR_VESSEL_SEL : Cesium.Color.fromCssColorString("#94a3b8"),
             showBackground: true,
-            backgroundColor: COLOR_BG.withAlpha(0.8),
-            backgroundPadding: new Cesium.Cartesian2(5, 3),
-            pixelOffset: new Cesium.Cartesian2(0, -18),
-            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 900_000),
+            backgroundColor: COLOR_BG.withAlpha(0.82),
+            backgroundPadding: new Cesium.Cartesian2(5, 2),
+            // Offset right of the marker — evidence stacks above, so the
+            // two annotation families never share the same lane.
+            pixelOffset: new Cesium.Cartesian2(14, -8),
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 700_000),
           },
         });
         tagEntity(vesselEnt, "vessel", v.mmsi);
@@ -464,7 +559,7 @@ export default function Globe3DView({
               Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
               Cesium.Cartesian3.fromDegrees(tipLon, tipLat, 80),
             ],
-            width: 1.5,
+            width: 1.2,
             material: sel ? COLOR_VESSEL_SEL : COLOR_VESSEL,
           },
         });
@@ -503,25 +598,49 @@ export default function Globe3DView({
     }
 
     if (isLayerOn("globe_grid")) {
-      for (const ev of frame.visibleEvents) {
+      // Annotation discipline: events clustered in space get vertically
+      // stacked callouts (no random scatter); labels only appear at close
+      // zoom; the most recent event in the sim clock is emphasized.
+      const ordered = [...frame.visibleEvents].sort(
+        (a, b) => Date.parse(a.time) - Date.parse(b.time),
+      );
+      // Cluster events within ~1.3 km of the previous one.
+      let slot = 0;
+      let prev: { lat: number; lon: number } | null = null;
+      for (const ev of ordered) {
+        const nearPrev =
+          prev &&
+          Math.abs(ev.lat - prev.lat) < 0.012 &&
+          Math.abs(ev.lon - prev.lon) < 0.012;
+        slot = nearPrev ? (slot + 1) % 5 : 0;
+        prev = ev;
+
+        const accent = Cesium.Color.fromCssColorString(EVENT_COLOR[ev.category] ?? "#fbbf24");
+        const isLatest = ev.id === ordered[ordered.length - 1]?.id;
+        const isFresh =
+          replayMs !== null && Date.parse(ev.time) >= replayMs - 3 * 60_000;
+
         const evEnt = ds.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ev.lon, ev.lat, 300),
           point: {
-            pixelSize: 8,
-            color: COLOR_EVIDENCE,
-            outlineColor: Cesium.Color.BLACK.withAlpha(0.5),
+            pixelSize: isLatest ? 7 : 5,
+            color: accent.withAlpha(isFresh || isLatest ? 1 : 0.8),
+            outlineColor: Cesium.Color.BLACK.withAlpha(0.55),
             outlineWidth: 1,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: ev.label,
-            font: "10px 'JetBrains Mono', monospace",
-            fillColor: Cesium.Color.fromCssColorString("#fde68a"),
+            text: `${ev.time.slice(11, 16)}Z  ${ev.label}`,
+            font: "9px 'JetBrains Mono', monospace",
+            fillColor: isLatest
+              ? accent
+              : accent.withAlpha(0.85),
             showBackground: true,
-            backgroundColor: COLOR_BG.withAlpha(0.8),
-            backgroundPadding: new Cesium.Cartesian2(5, 3),
-            pixelOffset: new Cesium.Cartesian2(0, -16),
-            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 400_000),
+            backgroundColor: COLOR_BG.withAlpha(0.85),
+            backgroundPadding: new Cesium.Cartesian2(5, 2),
+            // Stacked lanes above the point — deterministic, collision-free.
+            pixelOffset: new Cesium.Cartesian2(0, -(14 + slot * 18)),
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 350_000),
           },
         });
         tagEntity(evEnt, "event", ev.id);
@@ -532,6 +651,7 @@ export default function Globe3DView({
     incident,
     vessels,
     frame,
+    replayMs,
     selectedVesselMmsi,
     layers,
     isLayerOn,
@@ -539,20 +659,31 @@ export default function Globe3DView({
     driftResult,
   ]);
 
-  // ── REPLAY CLOCK ───────────────────────────────────────────────────
+  // ── SIMULATION CLOCK (centralized) ─────────────────────────────────
+  // requestAnimationFrame advances a ref-based sim clock at N× real time
+  // (1× = real-time), flushed to React state at 5 Hz — smooth clock without
+  // rebuilding Cesium entities per frame. Vessel positions, evidence
+  // visibility and the readout all derive from this single clock. Loops.
   useEffect(() => {
     if (!playing) return;
-    const id = window.setInterval(() => {
-      setReplayMs((prev) => {
-        const next = (prev ?? startMs) + speed * 60_000;
-        if (next >= endMs) {
-          setPlaying(false);
-          return endMs;
-        }
-        return next;
-      });
-    }, 1000);
-    return () => window.clearInterval(id);
+    let raf = 0;
+    let last = performance.now();
+    let simMs = replayMs ?? startMs;
+    let lastFlush = 0;
+    const step = (now: number) => {
+      const dt = now - last;
+      last = now;
+      simMs += dt * speed;
+      if (simMs >= endMs) simMs = startMs; // loop the demo window
+      if (now - lastFlush >= 200) {
+        lastFlush = now;
+        setReplayMs(simMs);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, speed, startMs, endMs]);
 
   // ── SELECTION FOCUS ────────────────────────────────────────────────
@@ -600,11 +731,15 @@ export default function Globe3DView({
   const handleReset = () => {
     setSelection(null);
     onVesselSelect(null);
+    setPlaying(false);
+    setReplayMs(null);
     viewerRef.current?.camera.flyHome(1.6);
   };
 
   const fmtTime = (ms: number) =>
-    new Date(ms).toLocaleTimeString("en-GB", { hour12: false, timeZone: "UTC" }) + "Z";
+    new Date(ms).toLocaleTimeString("en-GB", { hour12: false, timeZone: "UTC" }) + " UTC";
+
+  const clockMs = replayMs ?? endMs; // the one simulation clock everyone reads
 
   const selCorrelation = useMemo(() => {
     if (!selectedVesselMmsi || !incident) return null;
@@ -635,6 +770,19 @@ export default function Globe3DView({
 
   const selectedVessel = vessels.find((v) => v.mmsi === selectedVesselMmsi) ?? null;
 
+  // Assessment-panel evidence factors — derived from the selected vessel's
+  // sim-frame geometry and the existing attribution record (no new data).
+  const selAttr = attributions.find((a) => a.vesselId === selectedVesselMmsi) ?? null;
+  const selFramePos = selectedVesselMmsi ? frame.positions[selectedVesselMmsi] : null;
+  const driftDelta = useMemo(() => {
+    if (!selFramePos || !selectedVessel) return null;
+    // Lane reference = the vessel's own AIS course (from the shared demo
+    // data); deviation of live heading vs that course shows anomalous turn.
+    return Math.abs(
+      ((selFramePos.headingDeg - selectedVessel.course + 540) % 360) - 180,
+    );
+  }, [selFramePos, selectedVessel]);
+
   return (
     <div className="absolute inset-0 z-0 bg-[#050a12]">
       {/* Cesium container */}
@@ -648,35 +796,53 @@ export default function Globe3DView({
         </div>
       )}
 
-      {/* Left rail — layers */}
-      <div className="absolute left-3 top-3 z-20 flex w-60 flex-col gap-2">
-        <div className="rounded border border-sky-200/10 bg-[#050a12]/90 p-2">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">
-            <Eye className="size-3" /> Layers
+      {/* Left rail — intelligence layers (control instrument) */}
+      <div className="absolute left-3 top-3 z-20 w-52">
+        <div className={PANEL}>
+          <div className={PANEL_HEADER}>
+            <Layers3 className="size-3 text-zinc-500" />
+            <span className={PANEL_TITLE}>Intelligence Layers</span>
           </div>
-          <div className="space-y-0.5">
-            {layers.map((l) => (
-              <button
-                key={l.id}
-                onClick={() => onLayerToggle(l.id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded px-1.5 py-1 text-[10px] transition-colors",
-                  l.enabled
-                    ? "text-zinc-200 hover:bg-zinc-900"
-                    : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-400",
-                )}
-              >
-                <div
+          <div className="px-1 py-1">
+            {LAYER_DEFS.map((def) => {
+              const l = layers.find((x) => x.id === def.id);
+              if (!l) return null;
+              const Icon = def.icon;
+              return (
+                <button
+                  key={l.id}
+                  onClick={() => onLayerToggle(l.id)}
                   className={cn(
-                    "flex size-3 items-center justify-center rounded-sm border",
-                    l.enabled ? "border-sky-300 bg-sky-300/20" : "border-zinc-700",
+                    "group flex w-full items-center gap-2.5 rounded px-2 py-[5px] text-left transition-colors",
+                    l.enabled ? "hover:bg-white/5" : "hover:bg-white/[0.03]",
                   )}
                 >
-                  {l.enabled && <div className="size-1.5 rounded-full bg-sky-300" />}
-                </div>
-                {l.label}
-              </button>
-            ))}
+                  <Icon
+                    className={cn(
+                      "size-3.5 shrink-0 transition-colors",
+                      l.enabled ? def.accent : "text-zinc-700",
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      "flex-1 truncate text-[10px] tracking-wide transition-colors",
+                      l.enabled ? "text-zinc-200" : "text-zinc-600",
+                    )}
+                  >
+                    {def.label}
+                  </span>
+                  {/* Compact visibility lamp — replaces checkbox look */}
+                  <span
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full transition-all",
+                      l.enabled
+                        ? "bg-sky-300/90 shadow-[0_0_4px_rgba(125,211,252,0.6)]"
+                        : "bg-zinc-800",
+                    )}
+                  />
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -685,68 +851,128 @@ export default function Globe3DView({
       <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-1.5">
         <button
           onClick={() => focusInvestigation()}
-          className="flex cursor-pointer items-center gap-1.5 rounded border border-amber-300/30 bg-amber-300/10 px-2.5 py-1.5 text-[10px] font-medium text-amber-300 hover:bg-amber-300/20"
+          className={cn(
+            PANEL,
+            "flex cursor-pointer items-center gap-1.5 border-amber-300/25 px-2.5 py-1.5 text-[10px] font-medium text-amber-300/90 hover:border-amber-300/40 hover:bg-amber-300/10",
+          )}
           title="Frame spill + vessels + area"
         >
           <LocateFixed className="size-3.5" /> FOCUS INVESTIGATION
         </button>
         <button
           onClick={handleReset}
-          className="flex cursor-pointer items-center gap-1.5 rounded border border-sky-200/10 bg-[#050a12]/90 px-2.5 py-1.5 text-[10px] text-zinc-400 hover:text-zinc-200"
+          className={cn(
+            PANEL,
+            "flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-[10px] text-zinc-400 hover:text-zinc-200",
+          )}
         >
           <RotateCcw className="size-3" /> Reset View
         </button>
       </div>
 
-      {/* Replay timeline */}
-      <div className="absolute bottom-3 left-1/2 z-20 w-[420px] max-w-[60vw] -translate-x-1/2 rounded border border-sky-200/10 bg-[#050a12]/90 p-2.5">
-        <div className="mb-1.5 flex items-center justify-between">
-          <button
-            onClick={() => {
-              if (replayMs !== null && replayMs >= endMs) setReplayMs(startMs);
-              setPlaying((p) => !p);
-            }}
-            className="cursor-pointer text-sky-300 hover:text-sky-200"
-          >
-            {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-          </button>
-          <span className="font-mono text-[10px] text-zinc-300">
-            {replayMs !== null ? fmtTime(replayMs) : `LIVE — ${fmtTime(endMs)}`}
-          </span>
-          <div className="flex items-center gap-1">
-            {[30, 60, 120].map((s) => (
+      {/* Investigation timeline — event-anchored, simulation-driven */}
+      <div className="absolute bottom-3 left-1/2 z-20 w-[560px] max-w-[62vw] -translate-x-1/2">
+        <div className={PANEL}>
+          <div className="flex items-center justify-between px-3 pt-2">
+            <div className="flex items-center gap-2">
               <button
-                key={s}
-                onClick={() => setSpeed(s)}
+                onClick={() => {
+                  if (replayMs !== null && replayMs >= endMs) setReplayMs(startMs);
+                  setPlaying((p) => !p);
+                }}
                 className={cn(
-                  "rounded px-1 text-[8px] font-mono transition-colors",
-                  speed === s ? "bg-sky-300/20 text-sky-200" : "text-zinc-600 hover:text-zinc-400",
+                  "flex size-6 cursor-pointer items-center justify-center rounded border transition-colors",
+                  playing
+                    ? "border-sky-300/40 bg-sky-300/15 text-sky-200"
+                    : "border-white/15 text-zinc-300 hover:border-white/30 hover:text-zinc-100",
                 )}
+                aria-label={playing ? "Pause simulation" : "Run simulation"}
               >
-                {s}×
+                {playing ? <Pause className="size-3" /> : <Play className="size-3" />}
               </button>
-            ))}
+              <div>
+                <div className={SECTION_LABEL}>Simulation clock</div>
+                <div className="font-mono text-[11px] tabular-nums text-zinc-100">
+                  {fmtTime(clockMs)}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              {SPEEDS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSpeed(s)}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 font-mono text-[9px] transition-colors",
+                    speed === s
+                      ? "bg-sky-300/15 text-sky-200 ring-1 ring-sky-300/40"
+                      : "text-zinc-500 hover:text-zinc-300",
+                  )}
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-        <input
-          type="range"
-          min={startMs}
-          max={endMs}
-          step={30_000}
-          value={replayMs ?? endMs}
-          onChange={(e) => setReplayMs(Number(e.target.value))}
-          className="h-1 w-full accent-sky-400"
-        />
-        <div className="mt-1 flex items-center justify-between text-[8px] text-zinc-600">
-          <span>{fmtTime(startMs)}</span>
-          <span>{`${frame.visibleEvents.length} evidence events`}</span>
-          <span>{fmtTime(endMs)}</span>
+          {/* Event-anchored track: ticks mark real evidence timestamps from
+              the shared data; the playhead moves on the simulation clock. */}
+          <div className="px-3 pb-2 pt-1">
+            <div className="relative h-8">
+              <div className="absolute inset-x-0 top-3.5 h-px bg-white/15" />
+              {EVIDENCE_EVENTS.map((ev) => {
+                const t = Date.parse(ev.time);
+                const frac = (t - startMs) / Math.max(1, endMs - startMs);
+                if (frac < 0 || frac > 1) return null;
+                const passed = t <= clockMs;
+                const accent = EVENT_COLOR[ev.category] ?? "#fbbf24";
+                return (
+                  <button
+                    key={ev.id}
+                    title={`${ev.time.slice(11, 19)}Z — ${ev.label}`}
+                    onClick={() => setReplayMs(t)}
+                    className="group absolute top-2 -translate-x-1/2 cursor-pointer"
+                    style={{ left: `${frac * 100}%` }}
+                  >
+                    <span
+                      className="block size-1.5 rounded-full ring-2 ring-[#070d16] transition-transform group-hover:scale-150"
+                      style={{
+                        background: passed ? accent : "#3f3f46",
+                        boxShadow: passed ? `0 0 5px ${accent}66` : undefined,
+                      }}
+                    />
+                    <span
+                      className={cn(
+                        "mt-0.5 block whitespace-nowrap font-mono text-[7px] tracking-tight transition-colors",
+                        passed ? "text-zinc-400" : "text-zinc-700",
+                      )}
+                    >
+                      {ev.time.slice(11, 16)}
+                    </span>
+                  </button>
+                );
+              })}
+              {/* Playhead */}
+              <div
+                className="pointer-events-none absolute top-2 h-5 w-px bg-sky-300/90 shadow-[0_0_6px_rgba(125,211,252,0.5)]"
+                style={{
+                  left: `${((clockMs - startMs) / Math.max(1, endMs - startMs)) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between border-t border-white/10 px-3 py-1.5 text-[8px]">
+            <span className="font-mono text-zinc-500">{fmtTime(startMs)}</span>
+            <span className="uppercase tracking-[0.15em] text-zinc-600">
+              {frame.visibleEvents.length} of {EVIDENCE_EVENTS.length} observations
+            </span>
+            <span className="font-mono text-zinc-500">{fmtTime(endMs)}</span>
+          </div>
         </div>
       </div>
 
       {/* Selection HUD — spill or event summary (panel has detail) */}
       {selection?.kind === "spill" && incident && (
-        <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded border border-orange-500/40 bg-[#050a12]/90 px-3 py-1.5">
+        <div className={cn(PANEL, "absolute left-1/2 top-3 z-20 -translate-x-1/2 px-3 py-1.5")}>
           <div className="flex items-center gap-2 text-[10px]">
             <Target className="size-3.5 text-orange-400" />
             <span className="font-semibold text-zinc-100">{incident.label}</span>
@@ -756,53 +982,104 @@ export default function Globe3DView({
         </div>
       )}
       {selection?.kind === "event" && (
-        <div className="absolute left-1/2 top-3 z-20 max-w-md -translate-x-1/2 rounded border border-amber-300/40 bg-[#050a12]/90 px-3 py-1.5 text-[10px] text-amber-200">
+        <div
+          className={cn(
+            PANEL,
+            "absolute left-1/2 top-3 z-20 max-w-md -translate-x-1/2 px-3 py-2 text-[10px] leading-relaxed text-amber-200/90",
+          )}
+        >
           {EVIDENCE_EVENTS.find((e) => e.id === selection.eventId)?.detail}
         </div>
       )}
 
-      {/* Correlation mini-HUD */}
+      {/* Right — source assessment panel (analyst instrument) */}
       {selCorrelation && selectedVessel && (
-        <div className="absolute right-3 top-3 z-20 w-56 rounded border border-violet-400/30 bg-[#050a12]/90 p-2.5">
-          <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-violet-300">
-            <Ship className="size-3" /> Potential source correlation
+        <div className="absolute right-3 top-3 z-20 w-60">
+          <div className={PANEL}>
+            <div className={PANEL_HEADER}>
+              <Radar className="size-3 text-violet-300" />
+              <span className={PANEL_TITLE}>Potential Source</span>
+            </div>
+            <div className="px-3 py-2.5">
+              <div className="text-[12px] font-semibold tracking-wide text-zinc-100">
+                {selectedVessel.name}
+              </div>
+              <div className={cn(SECTION_LABEL, "mt-0.5")}>Candidate vessel</div>
+
+              {/* Source likelihood */}
+              <div className="mt-3">
+                <div className="flex items-baseline justify-between">
+                  <span className={SECTION_LABEL}>Source likelihood</span>
+                  <span className="font-mono text-[11px] text-violet-300">
+                    {selCorrelation.score}%
+                  </span>
+                </div>
+                <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-violet-400/70"
+                    style={{ width: `${Math.min(100, selCorrelation.score)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Evidence factors */}
+              <div className="mt-3">
+                <div className={SECTION_LABEL}>Evidence</div>
+                <ul className="mt-1 space-y-1">
+                  {[
+                    ["Spatial correlation", `${selCorrelation.distanceKm.toFixed(1)} km`],
+                    ["Temporal correlation", `${selCorrelation.hoursBeforeDetection.toFixed(1)} h prior`],
+                    ["Trajectory compatibility", selCorrelation.trackIntersectsArea ? "COMPATIBLE" : "NO"],
+                    ["Drift compatibility", selAttr ? `${selAttr.overallScore}%` : "—"],
+                    ["Heading relationship", driftDelta !== null ? `Δ ${Math.round(driftDelta)}° from lane` : "—"],
+                  ].map(([label, value]) => (
+                    <li key={label} className="flex items-center justify-between text-[9px]">
+                      <span className="flex items-center gap-1.5 text-zinc-400">
+                        <span className="size-1 rounded-full bg-zinc-600" />
+                        {label}
+                      </span>
+                      <span className="font-mono text-zinc-200">{value}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Status — honest, probabilistic language */}
+              <div className="mt-3 border-t border-white/10 pt-2">
+                <div className={SECTION_LABEL}>Status</div>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-amber-300" />
+                  <span className="text-[9px] font-medium uppercase tracking-[0.14em] text-amber-200/90">
+                    Investigation indicator
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[8px] uppercase tracking-[0.14em] text-zinc-500">
+                  Requires validation
+                </div>
+              </div>
+
+              <p className="mt-2 text-[8px] leading-relaxed text-zinc-600">
+                Correlation is probabilistic and does not establish causation.
+              </p>
+            </div>
           </div>
-          <div className="text-[11px] font-semibold text-zinc-100">{selectedVessel.name}</div>
-          <div className="mt-1.5 space-y-0.5 text-[9px] text-zinc-400">
-            <div className="flex justify-between">
-              <span>Distance from spill</span>
-              <span className="font-mono text-zinc-200">
-                {selCorrelation.distanceKm.toFixed(1)} km
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Hours before detection</span>
-              <span className="font-mono text-zinc-200">
-                {selCorrelation.hoursBeforeDetection.toFixed(1)} h
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Track ∩ area</span>
-              <span className="font-mono text-zinc-200">
-                {selCorrelation.trackIntersectsArea ? "YES" : "NO"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Correlation</span>
-              <span className="font-mono text-violet-300">{selCorrelation.score}/100</span>
-            </div>
-          </div>
-          <p className="mt-1.5 text-[8px] leading-relaxed text-zinc-600">
-            Candidate vessel — correlation does not establish causation.
-          </p>
         </div>
       )}
 
-      {/* Demo badge */}
-      <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1.5 rounded border border-amber-300/20 bg-[#050a12]/90 px-2 py-1">
-        <div className="size-1.5 rounded-full bg-amber-300" />
-        <span className="text-[8px] font-semibold uppercase tracking-wider text-amber-300/80">
-          Simulated data
+      {/* Data-provenance badge — technically honest */}
+      <div className={cn(PANEL, "absolute bottom-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1")}>
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            playing ? "animate-pulse bg-sky-300" : "bg-amber-300/80",
+          )}
+        />
+        <span className="text-[8px] font-semibold uppercase tracking-[0.15em] text-amber-300/80">
+          Demo AIS
+        </span>
+        <span className="h-2.5 w-px bg-white/15" />
+        <span className="text-[8px] uppercase tracking-[0.12em] text-zinc-500">
+          Simulated real-time
         </span>
       </div>
     </div>
