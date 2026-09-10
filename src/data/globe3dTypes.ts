@@ -4,6 +4,7 @@
 
 /** 3D scene layer ids (globe_* prefix distinguishes from 2D MapLayers). */
 export type Globe3dLayerId =
+  | "globe_traffic"
   | "globe_vessels"
   | "globe_tracks"
   | "globe_spill"

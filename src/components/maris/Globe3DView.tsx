@@ -67,6 +67,13 @@ import {
   buildContactLabel,
   getBracketSprite,
 } from "@/components/maris/trackingOverlays";
+import {
+  createTrafficLayer,
+  destroyTrafficLayer,
+  setTrafficSelection,
+  updateTrafficLayer,
+} from "@/components/maris/trafficLayer";
+import { EPOCH_MS } from "@/components/maris/trafficSim";
 
 if (!("cesiumBaseUrlSet" in window)) {
   (window as unknown as Record<string, unknown>).cesiumBaseUrlSet = true;
@@ -104,6 +111,7 @@ const LAYER_DEFS: {
   icon: typeof Ship;
   accent: string;
 }[] = [
+  { id: "globe_traffic", label: "Demo AIS Traffic", icon: Radar, accent: "text-sky-300" },
   { id: "globe_vessels", label: "Vessels", icon: Ship, accent: "text-sky-300" },
   { id: "globe_tracks", label: "Vessel Tracks", icon: Route, accent: "text-sky-300/70" },
   { id: "globe_spill", label: "Oil Spill", icon: Droplets, accent: "text-orange-400" },
@@ -757,9 +765,14 @@ export default function Globe3DView({
 
   // ── SIMULATION CLOCK (centralized) ─────────────────────────────────
   // requestAnimationFrame advances a ref-based sim clock at N× real time
-  // (1× = real-time), flushed to React state at 5 Hz — smooth clock without
-  // rebuilding Cesium entities per frame. Vessel positions, evidence
-  // visibility and the readout all derive from this single clock. Loops.
+  // (1× = real-time), flushed to React state at 5 Hz. The SAME clock drives
+  // the incident replay AND the demo-AIS traffic simulation (no second
+  // clock). When playback reaches the end of the recorded demo window the
+  // clock keeps advancing into the simulated future — traffic keeps moving
+  // continuously rather than teleporting back to the window start.
+  const simMsRef = useRef<number>(startMs);
+  simMsRef.current = replayMs ?? endMs;
+
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
@@ -770,7 +783,8 @@ export default function Globe3DView({
       const dt = now - last;
       last = now;
       simMs += dt * speed;
-      if (simMs >= endMs) simMs = startMs; // loop the demo window
+      // No wrap: past the end of the recorded window we simply continue in
+      // simulated time (evidence stays at its final state — correct).
       if (now - lastFlush >= 200) {
         lastFlush = now;
         setReplayMs(simMs);
@@ -781,6 +795,32 @@ export default function Globe3DView({
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, speed, startMs, endMs]);
+
+  // ── DEMO AIS TRAFFIC (per-frame, outside React) ────────────────────
+  // Drives the batched traffic layer directly from the SAME sim clock via
+  // a pre-render listener — smooth per-frame movement with zero React
+  // re-renders. Selection/candidate state is pushed in (see effect below).
+  const trafficOnRef = useRef(true);
+  trafficOnRef.current = isLayerOn("globe_traffic");
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !ready) return;
+    createTrafficLayer(viewer.scene);
+    setTrafficSelection(selectedVesselMmsi, candidateMmsi);
+
+    const removeListener = viewer.scene.preRender.addEventListener(() => {
+      if (!trafficOnRef.current) return;
+      updateTrafficLayer(viewer.scene, simMsRef.current, EPOCH_MS);
+    });
+
+    return () => {
+      removeListener();
+      destroyTrafficLayer(viewer.scene);
+    };
+    // Rebuild selection wiring only when identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, selectedVesselMmsi, candidateMmsi]);
 
   // ── SELECTION FOCUS ────────────────────────────────────────────────
   useEffect(() => {
