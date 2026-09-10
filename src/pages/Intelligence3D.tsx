@@ -12,6 +12,8 @@ import {
   DEMO_ENVIRONMENTAL,
   DEMO_DRIFT,
 } from "@/data/demoData";
+import { useIncidentStore } from "@/hooks/useIncidents";
+import { STATUS_LABELS } from "@/data/incidentStore";
 import type { Globe3dLayer } from "@/data/globe3dTypes";
 
 const INITIAL_GLOBE_LAYERS: Globe3dLayer[] = [
@@ -31,6 +33,12 @@ export default function Intelligence3D() {
   // Demo incident is pre-loaded — the 3D environment is investigation data,
   // not an entry point (same model as the SAR viewer).
   const incident = DEMO_INCIDENT;
+  // Centralized incident state — status/timeline shown in the header strip.
+  const incidentStore = useIncidentStore();
+  const managedIncident =
+    incidentStore.incidents.find(
+      (i) => i.id === incidentStore.activeIncidentId,
+    ) ?? incidentStore.incidents[0] ?? null;
   const [selectedVesselMmsi, setSelectedVesselMmsi] = useState<string | null>(
     DEMO_ATTRIBUTIONS[0]?.vesselId ?? null,
   );
@@ -67,6 +75,18 @@ export default function Intelligence3D() {
             {incident.incidentNumber} · {incident.polygon.center[0].toFixed(3)}°N{" "}
             {incident.polygon.center[1].toFixed(3)}°E
           </span>
+          {managedIncident && (
+            <>
+              <div className="h-4 w-px bg-zinc-800" />
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-300">
+                ● {STATUS_LABELS[managedIncident.status]}
+              </span>
+              <div className="h-4 w-px bg-zinc-800" />
+              <span className="text-[8px] uppercase tracking-wider text-orange-400/90">
+                Possible Oil Slick — Requires Validation
+              </span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

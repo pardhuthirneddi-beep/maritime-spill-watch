@@ -10,6 +10,7 @@ import RightPanel from "@/components/maris/RightPanel";
 import NotificationRail from "@/components/maris/NotificationRail";
 import { IncidentCommandStrip } from "@/components/maris/IncidentCommand";
 import { useIncidentStore } from "@/hooks/useIncidents";
+import { useIncidentPersistence } from "@/hooks/useIncidentPersistence";
 import {
   deriveEstimatedVolumeM3,
   recordIncidentUpdate,
@@ -115,6 +116,9 @@ export default function Dashboard() {
   );
   const incidentStoreRef = useRef(incidentStore);
   incidentStoreRef.current = incidentStore;
+
+  // Persist incident snapshots to the backend (best-effort, offline-safe).
+  useIncidentPersistence(activeManagedIncident);
 
   // Analysis simulation steps
   const ANALYSIS_STEPS = [

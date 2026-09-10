@@ -445,6 +445,29 @@ export default function SarViewer({ onBack }: SarViewerProps) {
               <MetaRow label="Length" value={`${detections[0]?.lengthKm || 0} km`} />
               <MetaRow label="Processing" value={`${analysis.processingTime}s`} />
             </div>
+
+            {/* Linked incident state (centralized incident store) */}
+            {linkedIncident && (
+              <div className="mt-2 rounded border border-sky-200/10 bg-zinc-900/30 p-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] text-zinc-300">
+                    {linkedIncident.incidentNumber}
+                  </span>
+                  <span className="text-[8px] font-semibold uppercase tracking-wider text-amber-300">
+                    ● {linkedIncident.status.replace("_", " ").toUpperCase()}
+                  </span>
+                </div>
+                <div className="mt-1 text-[8px] uppercase tracking-wider text-orange-400/90">
+                  Possible Oil Slick
+                </div>
+                <div className="mt-0.5 text-[8px] text-zinc-500">
+                  Last updated {new Date(linkedIncident.lastUpdatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" })} UTC · {linkedIncident.timeline.length} events
+                </div>
+                <div className="mt-1 rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 text-center text-[7px] font-semibold tracking-wider text-orange-400">
+                  REQUIRES VALIDATION
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Analysis Pipeline */}

@@ -34,7 +34,39 @@ const schema = defineSchema(
 
     // add other tables here
 
-    // AI Analyst conversation log (Experiential Labs streaming chat)
+    // MARIS Incident Management — persistent incident records. The client
+    // incident store remains the live source of truth; this table persists
+    // incident snapshots so investigation history survives reloads.
+    incidents: defineTable({
+      incidentNumber: v.string(), // MARIS-INC-0001
+      status: v.string(), // lifecycle: unverified | under_investigation | …
+      severity: v.string(),
+      latitude: v.number(),
+      longitude: v.number(),
+      areaKm2: v.optional(v.number()),
+      estimatedVolumeM3: v.optional(v.number()),
+      confidence: v.optional(v.number()),
+      detectionSource: v.string(),
+      currentSummary: v.string(),
+      detectionId: v.optional(v.string()),
+      sceneId: v.optional(v.string()),
+      sourceIncidentId: v.optional(v.string()),
+      detectedAt: v.string(),
+      createdAt: v.string(),
+      lastUpdatedAt: v.string(),
+      timeline: v.array(
+        v.object({
+          id: v.string(),
+          timestamp: v.string(),
+          eventType: v.string(),
+          description: v.string(),
+          source: v.string(),
+          severity: v.string(),
+        }),
+      ),
+    })
+      .index("by_incident_number", ["incidentNumber"])
+      .index("by_detection", ["detectionId"]),
     analystMessages: defineTable({
       sessionId: v.string(),
       userId: v.id("users"),
