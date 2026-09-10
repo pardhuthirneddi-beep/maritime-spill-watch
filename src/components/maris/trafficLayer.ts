@@ -37,6 +37,26 @@ const TRAIL_LENGTH_MS = 20 * 60_000; // recent-path window
 const TRAIL_STEPS = 6;
 
 const LABEL_CELL = 14; // collision-avoidance tile size (1/14° cells)
+const SHOW_TRAIL_BELOW = 900_000; // trails only when close (perf + clarity)
+
+/** Shared label offsets — lanes 0..7, then clamped (no per-frame alloc). */
+const LABEL_OFFSETS = [
+  new Cesium.Cartesian2(36, -16),
+  new Cesium.Cartesian2(47, -16),
+  new Cesium.Cartesian2(58, -16),
+  new Cesium.Cartesian2(69, -16),
+  new Cesium.Cartesian2(80, -16),
+  new Cesium.Cartesian2(91, -16),
+  new Cesium.Cartesian2(102, -16),
+  new Cesium.Cartesian2(113, -16),
+];
+/** Shared label colors — indexed instead of fromCssColorString per frame. */
+const LABEL_COLORS = [
+  Cesium.Color.fromCssColorString("#22d3ee"), // selected
+  Cesium.Color.fromCssColorString("#7da2b8"), // traffic
+];
+/** Shared trail materials — built once, never per frame. */
+const trailMaterials: Cesium.Material[] = [];
 
 interface TrafficHandles {
   symbols: Cesium.BillboardCollection;
@@ -49,6 +69,9 @@ interface TrafficHandles {
     bracket: Cesium.Billboard;
     label: Cesium.Label;
     trail: Cesium.Polyline;
+    /** Cache keys — avoid re-uploading identical sprite textures. */
+    symbolImageKey: string;
+    bracketImageKey: string;
   }[];
   /** Last rendered lat/lon per vessel (trail dedup). */
   lastTrail: [number, number][];
@@ -68,7 +91,13 @@ export function trafficMmsiFromPick(picked: unknown): string | null {
 }
 
 /** Lane offset counter per label cell (collision avoidance). */
-const laneUse = new Map<string, number>();
+const laneUse = new Map<number, number>();
+/** Reusable trail position buffer + pre-allocated Cartesian vectors. */
+const trailScratch: Cesium.Cartesian3[] = [];
+const trailVecs: Cesium.Cartesian3[] = Array.from(
+  { length: 8 },
+  () => new Cesium.Cartesian3(),
+);
 
 /** Which MMSI is selected (external state, set by the host view). */
 let selectedMmsi: string | null = null;
@@ -80,9 +109,9 @@ export function setTrafficSelection(mmsi: string | null, candidate: string | nul
   candidateMmsi = candidate;
 }
 
-function symbolState(v: SimVessel): "SELECTED" | "CANDIDATE" | "NORMAL" {
-  if (v.mmsi === selectedMmsi) return "SELECTED";
-  if (v.mmsi === candidateMmsi) return "CANDIDATE";
+function vesselState(mmsi: string): "SELECTED" | "CANDIDATE" | "NORMAL" {
+  if (mmsi === selectedMmsi) return "SELECTED";
+  if (mmsi === candidateMmsi) return "CANDIDATE";
   return "NORMAL";
 }
 
@@ -106,9 +135,24 @@ export function createTrafficLayer(scene: Cesium.Scene): void {
   scene.primitives.add(labels);
   scene.primitives.add(trails);
 
+  // One-time material construction for trails (selected / normal).
+  if (trailMaterials.length === 0) {
+    trailMaterials.push(
+      Cesium.Material.fromType("Color", {
+        color: Cesium.Color.fromCssColorString("#22d3ee").withAlpha(0.7),
+      }),
+      Cesium.Material.fromType("Color", {
+        color: Cesium.Color.fromCssColorString("#7da2b8").withAlpha(0.28),
+      }),
+    );
+  }
+
   const slots = fleet.map((v) => {
     const cls = classifyVessel(v.vesselType);
+    const symImageKey = `${v.vesselType}:NORMAL`;
     return {
+      symbolImageKey: symImageKey,
+      bracketImageKey: "NORMAL",
       symbol: symbols.add({
         image: getVesselSymbol(cls, "NORMAL"),
         scale: 0.3,
@@ -193,10 +237,6 @@ export function updateTrafficLayer(
   const camPosCarto = camera.positionCartographic;
   const camLat = Cesium.Math.toDegrees(camPosCarto.latitude);
   const camLon = Cesium.Math.toDegrees(camPosCarto.longitude);
-  const camHeight = camPosCarto.height;
-
-  // Rough camera-to-vessel range without sqrt-heavy math: chord via lat/lon.
-  const rangeCache = new Map<string, number>();
 
   // Deterministic label lanes are rebuilt each frame from the same data.
   laneUse.clear();
@@ -215,30 +255,35 @@ export function updateTrafficLayer(
 
     const sel = v.mmsi === selectedMmsi;
     const cand = v.mmsi === candidateMmsi;
-    const accent = sel ? "#22d3ee" : cand ? "#a78bfa" : "#7da2b8";
+    const state = sel ? "SELECTED" : cand ? "CANDIDATE" : "NORMAL";
 
     // ── SYMBOL ──────────────────────────────────────────────────────
-    const showSymbol = range < SHOW_SYMBOL_BELOW;
-    slot.symbol.show = showSymbol;
-    if (showSymbol) {
-      toCartesian(p.lat, p.lon, 80, scratchPos);
-      slot.symbol.position = Cesium.Cartesian3.clone(scratchPos, slot.symbol.position);
-      const headingDeg = resolveHeadingDeg(p.headingDeg, undefined);
-      slot.symbol.rotation = Cesium.Math.toRadians(-headingDeg);
-      slot.symbol.scale = sel ? 0.44 : 0.3;
+    slot.symbol.show = true;
+    toCartesian(p.lat, p.lon, 80, scratchPos);
+    slot.symbol.position = Cesium.Cartesian3.clone(scratchPos, slot.symbol.position);
+    slot.symbol.rotation = Cesium.Math.toRadians(-p.headingDeg);
+    slot.symbol.scale = sel ? 0.44 : 0.3;
+    // Only touch billboard.image when the sprite actually changes — Cesium
+    // re-uploads the texture otherwise (expensive at 536 vessels/frame).
+    const desiredImage = `${v.vesselType}:${state}`;
+    if (slot.symbolImageKey !== desiredImage) {
+      slot.symbolImageKey = desiredImage;
       slot.symbol.image = getVesselSymbol(
         classifyVessel(v.vesselType),
-        symbolState(v),
+        state,
       ) as unknown as string;
     }
 
     // ── BRACKETS ────────────────────────────────────────────────────
-    const state = symbolState(v);
     const showBracket = range < SHOW_BRACKET_BELOW;
     slot.bracket.show = showBracket;
     if (showBracket) {
-      slot.bracket.position = Cesium.Cartesian3.clone(scratchPos, slot.bracket.position);
-      slot.bracket.image = getBracketSprite(state) as unknown as string;
+      slot.bracket.position = slot.symbol.position;
+      const desiredBracket = state;
+      if (slot.bracketImageKey !== desiredBracket) {
+        slot.bracketImageKey = desiredBracket;
+        slot.bracket.image = getBracketSprite(state) as unknown as string;
+      }
       slot.bracket.scale = bracketScale(state) * (sel ? 0.9 : 0.75);
     }
 
@@ -246,34 +291,33 @@ export function updateTrafficLayer(
     const showLabel = range < SHOW_LABEL_BELOW;
     slot.label.show = showLabel;
     if (showLabel) {
-      slot.label.position = Cesium.Cartesian3.clone(scratchPos, slot.label.position);
-      const cell = `${Math.round(p.lat * LABEL_CELL)}:${Math.round(p.lon * LABEL_CELL)}`;
+      slot.label.position = slot.symbol.position;
+      // Numeric cell key (no string allocation per vessel per frame).
+      const cell =
+        Math.round(p.lat * LABEL_CELL) * 4096 +
+        Math.round(p.lon * LABEL_CELL);
       const lane = laneUse.get(cell) ?? 0;
       laneUse.set(cell, lane + 1);
-      slot.label.pixelOffset = new Cesium.Cartesian2(36 + lane * 11, -16);
-      slot.label.fillColor = Cesium.Color.fromCssColorString(accent);
+      // Shared offset objects — no per-frame Cartesian2 allocation.
+      const off = LABEL_OFFSETS[Math.min(lane, LABEL_OFFSETS.length - 1)];
+      slot.label.pixelOffset = off;
+      slot.label.fillColor = LABEL_COLORS[sel ? 0 : 1];
     }
 
-    // ── RECENT TRAIL (limited window, deduped when static) ─────────
-    const showTrail = showSymbol; // trails ride the symbol LOD gate
+    // ── RECENT TRAIL (limited window, near-camera only) ────────────
+    const showTrail = range < SHOW_TRAIL_BELOW;
     slot.trail.show = showTrail;
     if (showTrail) {
-      const pts = trailPoints(v, simMs, epochMs, TRAIL_LENGTH_MS, TRAIL_STEPS);
-      const positions: Cesium.Cartesian3[] = [];
-      for (const [lat, lon] of pts) {
-        positions.push(
-          toCartesian(lat, lon, 40, new Cesium.Cartesian3()),
-        );
+      trailScratch.length = 0;
+      for (let s = TRAIL_STEPS; s >= 0; s--) {
+        const t = simMs - s * (TRAIL_LENGTH_MS / TRAIL_STEPS);
+        const tp = positionAt(v, t, epochMs);
+        trailScratch.push(toCartesian(tp.lat, tp.lon, 40, trailVecs[s]));
       }
-      slot.trail.positions = positions;
+      slot.trail.positions = trailScratch;
       slot.trail.width = sel ? 1.8 : 0.8;
-      const mat = Cesium.Color.fromCssColorString(accent);
-      slot.trail.material = Cesium.Material.fromType("Color", {
-        color: sel ? mat.withAlpha(0.7) : mat.withAlpha(0.28),
-      });
+      // Shared materials — never Material.fromType per frame.
+      slot.trail.material = trailMaterials[sel ? 1 : 0];
     }
   }
-
-  // Keep the camera reference alive for potential future spatial queries.
-  void rangeCache;
 }
