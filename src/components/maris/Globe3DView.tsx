@@ -184,6 +184,9 @@ export default function Globe3DView({
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<SceneSelection>(null);
   const [replayMs, setReplayMs] = useState<number | null>(null);
+  // Replay running state — the clock itself always runs (traffic must keep
+  // moving); `playing` only marks whether the replay playhead is advancing
+  // through the evidence window for the timeline UI.
   const [playing, setPlaying] = useState(false);
   const [replayState, setReplayState] = useState<number | null>(null);
   // Centralized simulation clock: 1× = real-time (1 sim-ms per real-ms).
@@ -196,13 +199,11 @@ export default function Globe3DView({
   const startMs = useMemo(() => replayStartMs(vessels), [vessels]);
   const endMs = useMemo(() => replayEndMs(vessels), [vessels]);
   const simMs = simMsState ?? endMs;
-  // Evidence replay frame: while playing, the frame follows the live clock
-  // (so evidence appears per its timestamps); otherwise it follows the
-  // last seek, defaulting to the end-of-window state.
-  const effectiveReplayMs = playing ? simMs : replayMs;
+  // Evidence replay frame: the frame follows the live clock, so evidence
+  // appears per its timestamps as the replay progresses.
   const frame = useMemo(
-    () => buildReplayFrame(vessels, EVIDENCE_EVENTS, effectiveReplayMs ?? endMs),
-    [vessels, effectiveReplayMs, endMs],
+    () => buildReplayFrame(vessels, EVIDENCE_EVENTS, simMs),
+    [vessels, simMs],
   );
 
   const isLayerOn = useCallback(
@@ -951,7 +952,7 @@ export default function Globe3DView({
     onVesselSelect(null);
     setPlaying(false);
     setReplayState(null);
-    seekClock(endMs);
+    seekClock(startMs); // replay back to the window start
     viewerRef.current?.camera.flyHome(1.6);
   };
 
@@ -1096,9 +1097,9 @@ export default function Globe3DView({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  // (Re)start evidence playback: seek the single clock to
-                  // the window start; the clock is always running.
-                  if (!playing || clockMs >= endMs) seekClock(startMs);
+                  // Replay control: play/pause the (always-running) clock.
+                  // Play from the window start if playback finished.
+                  if (!playing && clockMs >= endMs) seekClock(startMs);
                   setPlaying((p) => !p);
                 }}
                 className={cn(
