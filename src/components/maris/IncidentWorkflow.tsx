@@ -23,8 +23,7 @@ import { cn } from "@/lib/utils";
 import {
   INVESTIGATION_STAGES,
   STATUS_LABELS,
-  startInvestigation,
-  resetInvestigation,
+  startInvestigation,  resetInvestigation,
   investigationComplete,
   workflowProgressPct,
   type InvestigationStageId,
@@ -131,7 +130,6 @@ export function IncidentStatusBar({
 
       {/* Row 3: actions */}
       <div className="flex items-center gap-1.5 border-t border-sky-200/10 px-2.5 py-1.5">
-        <RunButton incident={incident} isAnalyzing={isAnalyzing} />
         {ready && (
           <>
             <ExportButton
@@ -225,66 +223,6 @@ function StatusLamp({
       />
       <span className={cn("relative inline-flex size-2 rounded-full", color)} />
     </span>
-  );
-}
-
-function RunButton({
-  incident,
-  isAnalyzing,
-}: {
-  incident: ManagedIncident;
-  isAnalyzing?: boolean;
-}) {
-  const wf = incident.workflow;
-  const busy = !!wf.runningStage || !!isAnalyzing;
-  const complete = investigationComplete(wf);
-
-  if (complete) {
-    return (
-      <span className="flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[9px] font-semibold text-emerald-400">
-        <FileCheck2 className="size-3" />
-        Investigation Complete
-      </span>
-    );
-  }
-
-  if (wf.reportGenerated) {
-    // Report READY but not exported — the pipeline has nothing left to run;
-    // completion now requires the operator's export action, not a re-run.
-    return (
-      <span className="flex items-center gap-1.5 rounded border border-teal-500/40 bg-teal-500/10 px-2.5 py-1 text-[9px] font-semibold text-teal-300">
-        <Download className="size-3" />
-        Report Ready
-      </span>
-    );
-  }
-
-  return (
-    <button
-      onClick={startInvestigation}
-      disabled={busy}
-      className={cn(
-        "flex items-center gap-1.5 rounded border px-2.5 py-1 text-[9px] font-semibold transition-colors",
-        busy
-          ? "cursor-not-allowed border-zinc-700 bg-zinc-800 text-zinc-500"
-          : "border-orange-500/50 bg-orange-500/10 text-orange-400 hover:border-orange-500/70 hover:bg-orange-500/20",
-      )}
-    >
-      {busy ? (
-        <>
-          <Loader2 className="size-3 animate-spin" />
-          {wf.runningStage
-            ? (INVESTIGATION_STAGES.find((s) => s.id === wf.runningStage)?.label ??
-              "Running")
-            : "Running…"}
-        </>
-      ) : (
-        <>
-          <Play className="size-2.5" />
-          Run Investigation
-        </>
-      )}
-    </button>
   );
 }
 
