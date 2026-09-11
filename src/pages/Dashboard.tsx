@@ -101,6 +101,9 @@ export default function Dashboard() {
   });
 
   const [layers, setLayers] = useState<MapLayer[]>(INITIAL_LAYERS);
+  // Status-bar visibility only (map space). Closing never touches the
+  // incident/workflow state — the investigation keeps running.
+  const [statusBarDismissed, setStatusBarDismissed] = useState(false);
   const [activeView, setActiveView] = useState<PanelView>("overview");
 
   // ── CENTRALIZED INCIDENT STATE (shared source of truth) ──────────
@@ -349,7 +352,6 @@ export default function Dashboard() {
   }, [state, handleFatalPipelineError]);
 
   const hasData = state.incident !== null;
-
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050a12] text-zinc-100 overflow-hidden">
       {/* Header */}        <Header
@@ -403,8 +405,9 @@ export default function Dashboard() {
             onOpenIncident={() => setActiveView("overview")}
           />
 
-          {/* Incident workflow status bar — compact operational header (Prompt 8) */}
-          {activeManagedIncident && (
+          {/* Incident workflow status bar — compact operational header (Prompt 8).
+              Dismissible; a small pill restores it without touching state. */}
+          {activeManagedIncident && !statusBarDismissed && (
             <div className="absolute right-3 top-3 z-20 w-80">
               <IncidentStatusBar
                 incident={activeManagedIncident}
@@ -413,6 +416,9 @@ export default function Dashboard() {
                 onDownloadJson={handleDownloadJson}
               />
             </div>
+          )}
+          {activeManagedIncident && statusBarDismissed && (
+            <StatusBarRestorePill onRestore={() => setStatusBarDismissed(false)} incident={activeManagedIncident} />
           )}
 
           {/* Automatic operational alert — appears on Command Center open
@@ -536,5 +542,30 @@ export default function Dashboard() {
         )}
       </div>
     </div>
+  );
+}
+
+// Small unobtrusive pill shown after the incident status bar is dismissed —
+// click to restore it. Purely cosmetic; touches no incident state.
+function StatusBarRestorePill({
+  onRestore,
+  incident,
+}: {
+  onRestore: () => void;
+  incident: { incidentNumber: string };
+}) {
+  return (
+    <button
+      onClick={onRestore}
+      className="pointer-events-auto absolute right-3 top-3 z-20 flex items-center gap-2 rounded border border-sky-200/10 bg-[#070d16]/95 px-2.5 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm transition-colors hover:border-sky-400/40"
+      title="Show incident status bar"
+    >
+      <span className="font-mono text-[9px] font-semibold text-zinc-300">
+        {incident.incidentNumber}
+      </span>
+      <span className="text-[8px] font-semibold uppercase tracking-wider text-zinc-500">
+        Status
+      </span>
+    </button>
   );
 }

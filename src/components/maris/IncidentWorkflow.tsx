@@ -5,6 +5,7 @@
 // percentage corresponds to real completed investigation stages — never a
 // decorative 0→100 animation. The map remains dominant; these components
 // are deliberately small.
+import { useState } from "react";
 import {
   CircleDashed,
   Compass,
@@ -16,6 +17,7 @@ import {
   Play,
   RotateCcw,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -44,7 +46,11 @@ export function IncidentStatusBar({
   onDownloadPdf?: () => void;
   onDownloadJson?: () => void;
 }) {
-  if (!incident) return null;
+  // Visibility only — closing hides the UI, it never touches the incident
+  // state, workflow or pipeline. A small pill reopens it.
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!incident || dismissed) return null;
 
   const wf = incident.workflow;
   const pct = workflowProgressPct(wf);
@@ -68,6 +74,13 @@ export function IncidentStatusBar({
           <span className="text-[9px] font-semibold tracking-wider text-amber-300">
             {STATUS_LABELS[incident.status]}
           </span>
+          <button
+            onClick={() => setDismissed(true)}
+            className="ml-1 rounded p-0.5 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+            title="Hide status bar (investigation continues)"
+          >
+            <X className="size-3" />
+          </button>
         </div>
       </div>
 
