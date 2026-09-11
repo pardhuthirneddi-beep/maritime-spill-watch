@@ -6,7 +6,9 @@ import {
   dismissNotification,
   markAllNotificationsRead,
   setActiveIncident,
+  STATUS_LABELS,
   type IncidentNotification,
+  type ManagedIncident,
 } from "@/data/incidentStore";
 import type { OilSpillIncident, PanelView } from "@/data/types";
 
@@ -15,6 +17,8 @@ interface HeaderProps {
   activeView: PanelView;
   isAnalyzing: boolean;
   notifications?: IncidentNotification[];
+  /** Centralized incident-store record — active even before a run. */
+  managedIncident?: ManagedIncident | null;
   onOpenIncident?: () => void;
 }
 
@@ -23,6 +27,7 @@ export default function Header({
   activeView: _activeView,
   isAnalyzing,
   notifications = [],
+  managedIncident,
   onOpenIncident,
 }: HeaderProps) {
   return (
@@ -44,6 +49,27 @@ export default function Header({
             <div className="h-4 w-px bg-sky-200/10" />
             <span className="text-[10px] text-zinc-500">
               {incident.coordinates[0].toFixed(4)}°N, {incident.coordinates[1].toFixed(4)}°E
+            </span>
+          </>
+        ) : managedIncident ? (
+          <>
+            <div className="flex items-center gap-1.5">
+              <Radio className="size-3 text-amber-300/70 animate-pulse" />
+              <span className="text-[10px] font-semibold text-amber-300/90 uppercase tracking-wider">
+                Possible Oil Slick
+              </span>
+            </div>
+            <div className="h-4 w-px bg-sky-200/10" />
+            <span className="text-[10px] font-mono text-sky-200/80">
+              #{managedIncident.incidentNumber}
+            </span>
+            <div className="h-4 w-px bg-sky-200/10" />
+            <span className="text-[9px] font-semibold tracking-wider text-amber-300/90">
+              ● {STATUS_LABELS[managedIncident.status]}
+            </span>
+            <div className="h-4 w-px bg-sky-200/10" />
+            <span className="text-[10px] text-zinc-500">
+              {managedIncident.latitude.toFixed(4)}°N, {managedIncident.longitude.toFixed(4)}°E
             </span>
           </>
         ) : (

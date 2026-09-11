@@ -20,6 +20,10 @@ import {
   Wind,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  STATUS_LABELS,
+  type ManagedIncident,
+} from "@/data/incidentStore";
 import type { MapLayer, PanelView, OilSpillIncident } from "@/data/types";
 
 interface SidebarProps {
@@ -28,6 +32,10 @@ interface SidebarProps {
   activeView: PanelView;
   onViewChange: (view: PanelView) => void;
   incident: OilSpillIncident | null;
+  /** Centralized incident-store record — active even before a run. */
+  managedIncident?: ManagedIncident | null;
+  /** Number of vessels in the demo AIS dataset (derived, not fake). */
+  vesselsCount?: number;
   onRunInvestigation: () => void;
   isAnalyzing: boolean;
 }
@@ -59,6 +67,8 @@ export default function Sidebar({
   activeView,
   onViewChange,
   incident,
+  managedIncident,
+  vesselsCount = 0,
   onRunInvestigation,
   isAnalyzing,
 }: SidebarProps) {
@@ -103,6 +113,46 @@ export default function Sidebar({
 
       {!collapsed && (
         <div className="flex flex-1 flex-col overflow-y-auto">
+          {/* Active Incident — from the centralized incident store: present
+              as soon as the app starts in DEMO mode, not only after a run. */}
+          {managedIncident && !incident && (
+            <div className="border-b border-sky-200/10 px-3 py-3">
+              <h2 className="mb-2 text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">
+                Active Incident
+              </h2>
+              <div className="rounded border border-sky-200/10 bg-zinc-900/40 px-2.5 py-2">
+                <div className="font-mono text-[11px] font-semibold text-zinc-100">
+                  {managedIncident.incidentNumber}
+                </div>
+                <div className="text-[8px] font-semibold uppercase tracking-[0.18em] text-orange-400/90">
+                  Possible Oil Slick
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-amber-400" />
+                  <span className="text-[9px] font-semibold tracking-wider text-amber-300">
+                    {STATUS_LABELS[managedIncident.status]}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  <StatRow
+                    label="Area"
+                    value={
+                      managedIncident.areaKm2 !== null
+                        ? `${managedIncident.areaKm2} km²`
+                        : "—"
+                    }
+                    color="text-zinc-300"
+                  />
+                  <StatRow
+                    label="Vessels"
+                    value={String(vesselsCount)}
+                    color="text-blue-400"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Command Center Stats */}
           {incident && (
             <div className="border-b border-sky-200/10 px-3 py-3">
@@ -127,7 +177,7 @@ export default function Sidebar({
                 />
                 <StatRow
                   label="Vessels"
-                  value="5"
+                  value={String(vesselsCount)}
                   color="text-blue-400"
                 />
               </div>

@@ -11,6 +11,7 @@ import NotificationRail from "@/components/maris/NotificationRail";
 import {
   IncidentStatusBar,
 } from "@/components/maris/IncidentWorkflow";
+import IncidentAlertOverlay from "@/components/maris/IncidentAlertOverlay";
 import { useIncidentStore } from "@/hooks/useIncidents";
 import { useIncidentPersistence, useIncidentHydration } from "@/hooks/useIncidentPersistence";
 import {
@@ -346,14 +347,14 @@ export default function Dashboard() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050a12] text-zinc-100 overflow-hidden">
-      {/* Header */}
-      <Header
-        incident={state.incident}
-        activeView={activeView}
-        isAnalyzing={state.isAnalyzing}
-        notifications={incidentStore.notifications}
-        onOpenIncident={() => setActiveView("overview")}
-      />
+      {/* Header */}        <Header
+          incident={state.incident}
+          activeView={activeView}
+          isAnalyzing={state.isAnalyzing}
+          notifications={incidentStore.notifications}
+          managedIncident={activeManagedIncident}
+          onOpenIncident={() => setActiveView("overview")}
+        />
 
       {/* Main Layout */}
       <div className="flex flex-1 overflow-hidden">
@@ -364,6 +365,8 @@ export default function Dashboard() {
           activeView={activeView}
           onViewChange={setActiveView}
           incident={state.incident}
+          managedIncident={activeManagedIncident}
+          vesselsCount={DEMO_VESSELS.length}
           onRunInvestigation={runInvestigation}
           isAnalyzing={state.isAnalyzing}
         />
@@ -397,6 +400,14 @@ export default function Dashboard() {
               />
             </div>
           )}
+
+          {/* Automatic operational alert — appears on Command Center open
+              while the demo incident is unacknowledged (Prompt 9 §4/§5). */}
+          <IncidentAlertOverlay
+            incident={activeManagedIncident}
+            notifications={incidentStore.notifications}
+            onViewIncident={() => setActiveView("overview")}
+          />
 
           {/* Pre-investigation overlay */}
           {!hasData && !state.isAnalyzing && (

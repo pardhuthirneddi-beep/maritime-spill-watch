@@ -873,6 +873,16 @@ export function setActiveIncident(incidentId: string | null): void {
   mutate((s) => ({ ...s, activeIncidentId: incidentId }));
 }
 
+/** Mark a single notification read (e.g. the auto-incident alert was seen). */
+export function markNotificationRead(id: string): void {
+  mutate((s) => ({
+    ...s,
+    notifications: s.notifications.map((n) =>
+      n.id === id ? { ...n, read: true } : n,
+    ),
+  }));
+}
+
 export function dismissNotification(notificationId: string): void {
   mutate((s) => ({
     ...s,
