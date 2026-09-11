@@ -8,7 +8,6 @@ import Sidebar from "@/components/maris/Sidebar";
 import Header from "@/components/maris/Header";
 import RightPanel from "@/components/maris/RightPanel";
 import NotificationRail from "@/components/maris/NotificationRail";
-import { IncidentCommandStrip } from "@/components/maris/IncidentCommand";
 import {
   IncidentStatusBar,
   InvestigationProgressPanel,
