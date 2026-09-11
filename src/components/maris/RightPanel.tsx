@@ -107,7 +107,7 @@ export default function RightPanel({
           {view === "attribution" && "Source Attribution"}
           {view === "drift" && "Drift Analysis"}
           {view === "thickness" && "Oil Thickness"}
-          {view === "timeline" && "Incident Command"}
+          {view === "timeline" && "Timeline"}
           {view === "report" && "Investigation Report"}
           {view === "satellite" && "Satellite Analysis"}
           {view === "analyst" && "AI Analyst"}
