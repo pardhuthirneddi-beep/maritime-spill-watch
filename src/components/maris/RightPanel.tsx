@@ -27,7 +27,9 @@ import {
   IncidentCommandStrip,
   IncidentTimelineView,
 } from "./IncidentCommand";
+import { InvestigationProgressPanel } from "./IncidentWorkflow";
 import { useIncidentStore } from "@/hooks/useIncidents";
+import type { ManagedIncident } from "@/data/incidentStore";
 import type {
   OilSpillIncident,
   AisVessel,
@@ -148,6 +150,7 @@ export default function RightPanel({
         {view === "overview" && incident && (
           <OverviewPanel
             incident={incident}
+            managedIncident={activeManagedIncident}
             vessels={vessels}
             attributions={attributions}
             environmental={environmental}
@@ -246,12 +249,14 @@ function IncidentTimelinePanel({
 
 function OverviewPanel({
   incident,
+  managedIncident,
   vessels,
   attributions,
   environmental,
   hyperspectral,
 }: {
   incident: OilSpillIncident;
+  managedIncident: ManagedIncident | null;
   vessels: AisVessel[];
   attributions: VesselAttribution[];
   environmental: EnvironmentalConditions;
@@ -260,6 +265,9 @@ function OverviewPanel({
   const topAttribution = attributions[0];
   return (
     <div className="p-4 space-y-4">
+      {/* Investigation progress — Prompt-8 stage machine (actual state) */}
+      <InvestigationProgressPanel incident={managedIncident} />
+
       {/* Incident Card */}
       <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="flex items-center gap-2 mb-2">

@@ -9,11 +9,19 @@ import Header from "@/components/maris/Header";
 import RightPanel from "@/components/maris/RightPanel";
 import NotificationRail from "@/components/maris/NotificationRail";
 import { IncidentCommandStrip } from "@/components/maris/IncidentCommand";
+import {
+  IncidentStatusBar,
+  InvestigationProgressPanel,
+} from "@/components/maris/IncidentWorkflow";
 import { useIncidentStore } from "@/hooks/useIncidents";
 import { useIncidentPersistence } from "@/hooks/useIncidentPersistence";
 import {
+  completeStage,
   deriveEstimatedVolumeM3,
+  markReportGenerated,
   recordIncidentUpdate,
+  startInvestigation,
+  failStage,
 } from "@/data/incidentStore";
 import {
   DEMO_INCIDENT,
@@ -120,7 +128,8 @@ export default function Dashboard() {
   // Persist incident snapshots to the backend (best-effort, offline-safe).
   useIncidentPersistence(activeManagedIncident);
 
-  // Analysis simulation steps
+  // Analysis simulation steps — mapped onto the Prompt-8 investigation
+  // stages so the Command Center progress reflects ACTUAL completion.
   const ANALYSIS_STEPS = [
     { step: "Loading SAR satellite imagery...", progress: 5 },
     { step: "Preprocessing — noise reduction...", progress: 10 },
@@ -142,6 +151,8 @@ export default function Dashboard() {
   ];
 
   const runInvestigation = useCallback(async () => {
+    // Prompt-8: the workflow state machine starts with the click.
+    startInvestigation();
     setState((s) => ({
       ...s,
       isAnalyzing: true,
@@ -161,21 +172,29 @@ export default function Dashboard() {
       await new Promise((r) => setTimeout(r, 350));
 
       // Continuous incident updates at each analysis milestone. The same
-      // incident is updated every run — never duplicated.
+      // incident is updated every run — never duplicated. Stage completion
+      // gates mirror the real pipeline: each investigation stage completes
+      // exactly when its corresponding analysis work finishes.
       if (!recordedStepsRef.current.has(progress)) {
         recordedStepsRef.current.add(progress);
-        if (progress === 35)
+        if (progress === 20) completeStage("verification");
+        if (progress === 35) {
           recordStep(35, "GEOMETRY", "SAR geometry updated — spill polygon generated", {
-            status: "under_investigation",
+            status: undefined,
           });
+          completeStage("quantification");
+        }
+        if (progress === 45) completeStage("ais_correlation");
         if (progress === 40)
           recordStep(40, "AREA", "Spill area recalculated — 14.7 km², 8.2 km length", {
             areaKm2: DEMO_INCIDENT.polygon.areaKm2,
           });
         if (progress === 60)
           recordStep(60, "AIS", "AIS correlation updated — 5 candidates in vicinity");
-        if (progress === 78)
+        if (progress === 78) {
           recordStep(78, "DRIFT", "Drift reconstruction updated — probable origin backtracked");
+          completeStage("drift_reconstruction");
+        }
         if (progress === 94) {
           const vol = deriveEstimatedVolumeM3(
             DEMO_INCIDENT.polygon.areaKm2,
@@ -185,6 +204,7 @@ export default function Dashboard() {
             estimatedVolumeM3: vol ?? undefined,
             status: "impact_assessment",
           });
+          completeStage("evidence_fusion");
         }
       }
 
@@ -229,25 +249,7 @@ export default function Dashboard() {
       }
       if (progress === 98) {
         setState((s) => ({ ...s, timeline: DEMO_TIMELINE }));
-      }
-    }
-
-    // Lifecycle completion: the operational end-state — never "confirmed".
-    {
-      const store = incidentStoreRef.current;
-      const inc =
-        store.incidents.find((i) => i.id === store.activeIncidentId) ??
-        store.incidents[0];
-      if (inc) {
-        recordIncidentUpdate(inc.id, {
-          eventType: "STATUS",
-          description: "Investigation evidence compiled — incident REQUIRES VALIDATION",
-          source: "MARIS Incident Command",
-          severity: "important",
-          status: "requires_validation",
-          summary:
-            "Evidence compiled for review. Possible oil slick — requires validation.",
-        });
+        completeStage("report"); // report pipeline ready — artifact pending export
       }
     }
 
@@ -260,6 +262,14 @@ export default function Dashboard() {
     setActiveView("overview");
   }, [recordStep]);
 
+  // Failure path (Prompt-8 §9: never silently swallow a failed run). If the
+  // pipeline is cancelled mid-run, the workflow surfaces the interruption.
+  const handleFatalPipelineError = useCallback((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    failStage("report", msg);
+    setState((s) => ({ ...s, isAnalyzing: false, analysisStep: "" }));
+  }, []);
+
   const handleLayerToggle = useCallback((id: string) => {
     setLayers((prev) =>
       prev.map((l) => (l.id === id ? { ...l, enabled: !l.enabled } : l))
@@ -271,41 +281,58 @@ export default function Dashboard() {
     setActiveView("vessel");
   }, []);
 
+  // Report exports (Prompt-8 §9): the incident reaches its final state
+  // ONLY after the artifact is actually generated + saved. Generation
+  // happens synchronously; a thrown error prevents the status change.
   const handleDownloadPdf = useCallback(() => {
-    const reportData = {
-      incident: state.incident!,
-      vessels: state.vessels,
-      attributions: state.attributions,
-      anomalies: state.behaviorAnomalies,
-      environmental: state.environmental,
-      drift: state.driftResult,
-      hyperspectral: state.hyperspectral,
-      timeline: state.timeline,
-    };
-    const doc = generatePdfReport(reportData);
-    doc.save(`MARIS-Incident-${state.incident?.incidentNumber || "report"}.pdf`);
-  }, [state]);
+    if (!state.incident) return;
+    try {
+      const reportData = {
+        incident: state.incident,
+        vessels: state.vessels,
+        attributions: state.attributions,
+        anomalies: state.behaviorAnomalies,
+        environmental: state.environmental,
+        drift: state.driftResult,
+        hyperspectral: state.hyperspectral,
+        timeline: state.timeline,
+      };
+      const doc = generatePdfReport(reportData);
+      doc.save(`MARIS-Incident-${state.incident.incidentNumber || "report"}.pdf`);
+      markReportGenerated(); // success → final workflow state + timeline
+    } catch (err) {
+      handleFatalPipelineError(err);
+      throw err;
+    }
+  }, [state, handleFatalPipelineError]);
 
   const handleDownloadJson = useCallback(() => {
-    const reportData = {
-      incident: state.incident!,
-      vessels: state.vessels,
-      attributions: state.attributions,
-      anomalies: state.behaviorAnomalies,
-      environmental: state.environmental,
-      drift: state.driftResult,
-      hyperspectral: state.hyperspectral,
-      timeline: state.timeline,
-    };
-    const json = generateJsonReport(reportData);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `MARIS-${state.incident?.incidentNumber || "report"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [state]);
+    if (!state.incident) return;
+    try {
+      const reportData = {
+        incident: state.incident,
+        vessels: state.vessels,
+        attributions: state.attributions,
+        anomalies: state.behaviorAnomalies,
+        environmental: state.environmental,
+        drift: state.driftResult,
+        hyperspectral: state.hyperspectral,
+        timeline: state.timeline,
+      };
+      const json = generateJsonReport(reportData);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `MARIS-${state.incident.incidentNumber || "report"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      markReportGenerated(); // success → final workflow state + timeline
+    } catch (err) {
+      handleFatalPipelineError(err);
+      throw err;
+    }
+  }, [state, handleFatalPipelineError]);
 
   const hasData = state.incident !== null;
 
@@ -316,6 +343,8 @@ export default function Dashboard() {
         incident={state.incident}
         activeView={activeView}
         isAnalyzing={state.isAnalyzing}
+        notifications={incidentStore.notifications}
+        onOpenIncident={() => setActiveView("overview")}
       />
 
       {/* Main Layout */}
@@ -351,13 +380,12 @@ export default function Dashboard() {
             onOpenIncident={() => setActiveView("overview")}
           />
 
-          {/* Incident Command strip — compact operational header */}
+          {/* Incident workflow status bar — compact operational header (Prompt 8) */}
           {activeManagedIncident && (
             <div className="absolute right-3 top-3 z-20 w-80">
-              <IncidentCommandStrip
+              <IncidentStatusBar
                 incident={activeManagedIncident}
-                incidents={incidentStore.incidents}
-                onSelectIncident={() => setActiveView("overview")}
+                isAnalyzing={state.isAnalyzing}
               />
             </div>
           )}

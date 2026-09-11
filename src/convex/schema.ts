@@ -41,6 +41,16 @@ const schema = defineSchema(
       incidentNumber: v.string(), // MARIS-INC-0001
       status: v.string(), // lifecycle: unverified | under_investigation | …
       severity: v.string(),
+      // Prompt-8 investigation workflow (stage machine + progress).
+      workflow: v.optional(
+        v.object({
+          runningStage: v.optional(v.string()),
+          completedStages: v.array(v.string()),
+          reportGenerated: v.boolean(),
+          reportExportedAt: v.optional(v.string()),
+          lastError: v.optional(v.string()),
+        }),
+      ),
       latitude: v.number(),
       longitude: v.number(),
       areaKm2: v.optional(v.number()),

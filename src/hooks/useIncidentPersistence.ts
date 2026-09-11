@@ -19,6 +19,9 @@ function signature(i: ManagedIncident): string {
     i.currentSummary,
     i.lastUpdatedAt,
     i.timeline.length,
+    i.workflow.runningStage,
+    i.workflow.completedStages.length,
+    i.workflow.reportGenerated,
   ]);
 }
 
@@ -42,6 +45,13 @@ export function useIncidentPersistence(incident: ManagedIncident | null): void {
           incidentNumber: incident.incidentNumber,
           status: incident.status,
           severity: incident.severity,
+          workflow: {
+            runningStage: incident.workflow.runningStage ?? undefined,
+            completedStages: incident.workflow.completedStages,
+            reportGenerated: incident.workflow.reportGenerated,
+            reportExportedAt: incident.workflow.reportExportedAt ?? undefined,
+            lastError: incident.workflow.lastError ?? undefined,
+          },
           latitude: incident.latitude,
           longitude: incident.longitude,
           areaKm2: incident.areaKm2 ?? undefined,
