@@ -119,6 +119,8 @@ export default function Sidebar({
               as soon as the app starts in DEMO mode, not only after a run. */}
           {managedIncident && !incident && (
             <div className="border-b border-sky-200/10 px-3 py-3">
+              {/* EST. VOLUME — modelled value from the incident record (derived
+                  from HSI thickness evidence when available; — before that). */}
               <h2 className="mb-2 text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">
                 Active Incident
               </h2>
@@ -144,6 +146,15 @@ export default function Sidebar({
                         : "—"
                     }
                     color="text-zinc-300"
+                  />
+                  <StatRow
+                    label="Est. Volume"
+                    value={
+                      managedIncident.estimatedVolumeM3 !== null
+                        ? `${managedIncident.estimatedVolumeM3.toLocaleString("en-US")} m³`
+                        : "—"
+                    }
+                    color="text-cyan-300"
                   />
                   <StatRow
                     label="Vessels"
@@ -176,6 +187,16 @@ export default function Sidebar({
                   label="Area"
                   value={`${incident.polygon.areaKm2} km²`}
                   color="text-zinc-300"
+                />
+                <StatRow
+                  label="Est. Volume"
+                  value={
+                    managedIncident?.estimatedVolumeM3 !== null &&
+                    managedIncident?.estimatedVolumeM3 !== undefined
+                      ? `${managedIncident.estimatedVolumeM3.toLocaleString("en-US")} m³`
+                      : "—"
+                  }
+                  color="text-cyan-300"
                 />
                 <StatRow
                   label="Vessels"
