@@ -7,6 +7,7 @@
 // and per-incident timeline (GET /incidents/{id}/timeline).
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 const timelineEventValidator = v.object({
   id: v.string(),
@@ -117,12 +118,12 @@ export const upsertIncident = mutation({
       });
       return { id: existingByNumber._id, created: false };
     }
-    let existingByDetection: { _id: any } | null = null;
+    let existingByDetection: { _id: Id<"incidents"> } | null = null;
     if (args.detectionId) {
-      existingByDetection = (await ctx.db
+      existingByDetection = await ctx.db
         .query("incidents")
         .withIndex("by_detection", (q) => q.eq("detectionId", args.detectionId))
-        .unique()) as { _id: any } | null;
+        .unique();
     }
     if (existingByDetection) {
       await ctx.db.patch(existingByDetection._id, {

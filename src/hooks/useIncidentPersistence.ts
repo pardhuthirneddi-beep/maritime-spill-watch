@@ -5,7 +5,7 @@
 // remains the live source of truth and the app works fully offline if
 // the write fails.
 import { useEffect, useRef } from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { hydrateFromPersisted } from "@/data/incidentStore";
 import type { ManagedIncident } from "@/data/incidentStore";
@@ -35,6 +35,7 @@ function signature(i: ManagedIncident): string {
  */
 export function useIncidentPersistence(incident: ManagedIncident | null): void {
   const lastSig = useRef<string | null>(null);
+  const upsert = useMutation(api.incidents.upsertIncident);
 
   useEffect(() => {
     if (!incident) return;
@@ -45,7 +46,7 @@ export function useIncidentPersistence(incident: ManagedIncident | null): void {
     // Fire-and-forget persistence; offline DEMO mode keeps working.
     void (async () => {
       try {
-        await (api as any).incidents.upsertIncident({
+        await upsert({
           incidentNumber: incident.incidentNumber,
           status: incident.status,
           severity: incident.severity,
@@ -82,7 +83,8 @@ export function useIncidentPersistence(incident: ManagedIncident | null): void {
         // Persistence is best-effort — never block the operational UI.
       }
     })();
-  }, [incident]);
+    // `upsert` from useMutation has a stable identity; lastSig dedups writes.
+  }, [incident, upsert]);
 }
 
 /**

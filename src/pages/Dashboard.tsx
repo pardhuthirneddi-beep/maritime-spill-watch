@@ -10,7 +10,6 @@ import RightPanel from "@/components/maris/RightPanel";
 import NotificationRail from "@/components/maris/NotificationRail";
 import {
   IncidentStatusBar,
-  InvestigationProgressPanel,
 } from "@/components/maris/IncidentWorkflow";
 import { useIncidentStore } from "@/hooks/useIncidents";
 import { useIncidentPersistence, useIncidentHydration } from "@/hooks/useIncidentPersistence";
@@ -43,6 +42,29 @@ import type {
   PanelView,
   InvestigationState,
 } from "@/data/types";
+
+// Analysis simulation steps — mapped onto the Prompt-8 investigation
+// stages so the Command Center progress reflects ACTUAL completion.
+// Module-scope constant: identical across renders, no dependency churn.
+const ANALYSIS_STEPS = [
+  { step: "Loading SAR satellite imagery...", progress: 5 },
+  { step: "Preprocessing — noise reduction...", progress: 10 },
+  { step: "Sea/background segmentation...", progress: 15 },
+  { step: "Extracting dark-region candidates...", progress: 20 },
+  { step: "Shape analysis & contextual filtering...", progress: 28 },
+  { step: "Generating oil-slick polygon...", progress: 35 },
+  { step: "Calculating spill area & length...", progress: 40 },
+  { step: "Assigning detection confidence...", progress: 45 },
+  { step: "Correlating AIS vessel data...", progress: 55 },
+  { step: "Computing vessel trajectories...", progress: 60 },
+  { step: "Running source attribution engine...", progress: 70 },
+  { step: "Drift backtracking analysis...", progress: 78 },
+  { step: "Forward drift prediction...", progress: 82 },
+  { step: "AIS behaviour anomaly analysis...", progress: 88 },
+  { step: "Hyperspectral thickness estimation...", progress: 94 },
+  { step: "Generating investigation report...", progress: 98 },
+  { step: "Investigation complete.", progress: 100 },
+];
 
 const INITIAL_LAYERS: MapLayer[] = [
   { id: "sar", label: "SAR", enabled: true, category: "satellite" },
@@ -91,6 +113,14 @@ export default function Dashboard() {
   // Continuous incident updates driven by the investigation pipeline.
   // Each analysis milestone updates the SAME incident (dedup guarantees
   // re-runs never duplicate history) and bumps last_updated_at.
+  //
+  // The store snapshot is mirrored into a ref in an EFFECT (never during
+  // render) so the pipeline's async loop always reads the freshest state
+  // without making recordStep depend on the store identity.
+  const incidentStoreRef = useRef(incidentStore);
+  useEffect(() => {
+    incidentStoreRef.current = incidentStore;
+  }, [incidentStore]);
   const recordedStepsRef = useRef<Set<number>>(new Set());
   const recordStep = useCallback(
     (
@@ -121,8 +151,6 @@ export default function Dashboard() {
     },
     [],
   );
-  const incidentStoreRef = useRef(incidentStore);
-  incidentStoreRef.current = incidentStore;
 
   // Persist incident snapshots to the backend (best-effort, offline-safe).
   useIncidentPersistence(activeManagedIncident);
@@ -131,26 +159,6 @@ export default function Dashboard() {
 
   // Analysis simulation steps — mapped onto the Prompt-8 investigation
   // stages so the Command Center progress reflects ACTUAL completion.
-  const ANALYSIS_STEPS = [
-    { step: "Loading SAR satellite imagery...", progress: 5 },
-    { step: "Preprocessing — noise reduction...", progress: 10 },
-    { step: "Sea/background segmentation...", progress: 15 },
-    { step: "Extracting dark-region candidates...", progress: 20 },
-    { step: "Shape analysis & contextual filtering...", progress: 28 },
-    { step: "Generating oil-slick polygon...", progress: 35 },
-    { step: "Calculating spill area & length...", progress: 40 },
-    { step: "Assigning detection confidence...", progress: 45 },
-    { step: "Correlating AIS vessel data...", progress: 55 },
-    { step: "Computing vessel trajectories...", progress: 60 },
-    { step: "Running source attribution engine...", progress: 70 },
-    { step: "Drift backtracking analysis...", progress: 78 },
-    { step: "Forward drift prediction...", progress: 82 },
-    { step: "AIS behaviour anomaly analysis...", progress: 88 },
-    { step: "Hyperspectral thickness estimation...", progress: 94 },
-    { step: "Generating investigation report...", progress: 98 },
-    { step: "Investigation complete.", progress: 100 },
-  ];
-
   const runInvestigation = useCallback(async () => {
     // Prompt-8: the workflow state machine starts with the click.
     startInvestigation();
@@ -262,7 +270,6 @@ export default function Dashboard() {
     }));
     setActiveView("overview");
   }, [recordStep]);
-
   // Failure path (Prompt-8 §9: never silently swallow a failed run). If the
   // pipeline is cancelled mid-run, the workflow surfaces the interruption.
   const handleFatalPipelineError = useCallback((err: unknown) => {
