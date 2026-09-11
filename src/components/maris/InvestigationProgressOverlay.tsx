@@ -196,49 +196,6 @@ export function InvestigationProgressOverlay({
           </div>
         )}
       </div>
-
-      {/* Compact stage list — actual per-stage state */}
-      <div className="space-y-1 border-t border-sky-200/10 px-2.5 py-2">
-        {INVESTIGATION_STAGES.map((stage) => {
-          const done = wf.completedStages.includes(stage.id);
-          const isRunning = wf.runningStage === stage.id;
-          return (
-            <div key={stage.id} className="flex items-center gap-1.5">
-              {done ? (
-                <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-              ) : isRunning ? (
-                <Loader2 className="size-2.5 shrink-0 animate-spin text-orange-400" />
-              ) : (
-                <CircleDashed className="size-2.5 shrink-0 text-zinc-700" />
-              )}
-              <span
-                className={cn(
-                  "text-[8px] font-semibold tracking-wider",
-                  done
-                    ? "text-zinc-400"
-                    : isRunning
-                      ? "text-orange-300"
-                      : "text-zinc-600",
-                )}
-              >
-                {stage.label}
-              </span>
-              <span
-                className={cn(
-                  "ml-auto text-[7px] font-semibold uppercase tracking-wider",
-                  done
-                    ? "text-emerald-500/80"
-                    : isRunning
-                      ? "text-orange-400"
-                      : "text-zinc-700",
-                )}
-              >
-                {done ? "Done" : isRunning ? "Running" : "Pending"}
-              </span>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
