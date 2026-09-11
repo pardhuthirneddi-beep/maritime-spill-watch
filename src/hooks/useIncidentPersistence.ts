@@ -1,9 +1,13 @@
 // MARIS — Incident persistence: mirrors the active incident snapshot to
 // the Convex `incidents` table whenever it materially changes (status,
-// fields, timeline). Fire-and-forget: the local store remains the live
-// source of truth and the app works fully offline if the write fails.
+// fields, timeline) AND hydrates the local workflow from the last
+// persisted snapshot on first load. Fire-and-forget: the local store
+// remains the live source of truth and the app works fully offline if
+// the write fails.
 import { useEffect, useRef } from "react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { hydrateFromPersisted } from "@/data/incidentStore";
 import type { ManagedIncident } from "@/data/incidentStore";
 
 function signature(i: ManagedIncident): string {
@@ -79,4 +83,37 @@ export function useIncidentPersistence(incident: ManagedIncident | null): void {
       }
     })();
   }, [incident]);
+}
+
+/**
+ * One-shot hydration: adopt a previous session's persisted incident
+ * snapshot (if it has MORE history than the local deterministic seed) so
+ * investigation status survives page refresh. Must be mounted once where
+ * the incident store is consumed (Dashboard).
+ */
+export function useIncidentHydration(): void {
+  const hydratedRef = useRef(false);
+  const persisted = useQuery(api.incidents.listIncidents, {});
+
+  useEffect(() => {
+    if (hydratedRef.current || !persisted?.length) return;
+    hydratedRef.current = true;
+    const row = persisted[0];
+    try {
+      hydrateFromPersisted({
+        incidentNumber: row.incidentNumber,
+        status: row.status,
+        severity: row.severity,
+        areaKm2: row.areaKm2 ?? undefined,
+        estimatedVolumeM3: row.estimatedVolumeM3 ?? undefined,
+        confidence: row.confidence ?? undefined,
+        currentSummary: row.currentSummary,
+        lastUpdatedAt: row.lastUpdatedAt,
+        timeline: row.timeline ?? [],
+        workflow: row.workflow ?? null,
+      });
+    } catch {
+      // Hydration is best-effort — offline DEMO mode keeps working.
+    }
+  }, [persisted]);
 }

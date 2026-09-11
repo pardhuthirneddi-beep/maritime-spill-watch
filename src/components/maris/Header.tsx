@@ -172,7 +172,7 @@ function NotificationBell({
                     }}
                     className={cn(
                       "w-full rounded border px-2 py-1.5 text-left transition-colors",
-                      n.incidentId === n.incidentId && !n.read
+                      !n.read
                         ? "border-l-2 border-l-orange-400/70 border-sky-200/10 bg-zinc-900/60"
                         : "border-sky-200/10 bg-zinc-900/30",
                     )}

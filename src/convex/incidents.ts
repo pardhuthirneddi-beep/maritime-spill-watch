@@ -17,9 +17,18 @@ const timelineEventValidator = v.object({
   severity: v.string(),
 });
 
+const workflowValidator = v.object({
+  runningStage: v.optional(v.string()),
+  completedStages: v.array(v.string()),
+  reportGenerated: v.boolean(),
+  reportExportedAt: v.optional(v.string()),
+  lastError: v.optional(v.string()),
+});
+
 const incidentPatchValidator = v.object({
   status: v.optional(v.string()),
   severity: v.optional(v.string()),
+  workflow: v.optional(workflowValidator),
   areaKm2: v.optional(v.number()),
   estimatedVolumeM3: v.optional(v.number()),
   confidence: v.optional(v.number()),
@@ -77,6 +86,7 @@ export const upsertIncident = mutation({
     estimatedVolumeM3: v.optional(v.number()),
     confidence: v.optional(v.number()),
     detectionSource: v.string(),
+    workflow: workflowValidator,
     currentSummary: v.string(),
     detectionId: v.optional(v.string()),
     sceneId: v.optional(v.string()),
@@ -103,6 +113,7 @@ export const upsertIncident = mutation({
         currentSummary: args.currentSummary,
         lastUpdatedAt: args.lastUpdatedAt,
         timeline: args.timeline,
+        workflow: args.workflow,
       });
       return { id: existingByNumber._id, created: false };
     }
@@ -123,6 +134,7 @@ export const upsertIncident = mutation({
         currentSummary: args.currentSummary,
         lastUpdatedAt: args.lastUpdatedAt,
         timeline: args.timeline,
+        workflow: args.workflow,
       });
       return { id: existingByDetection._id, created: false };
     }

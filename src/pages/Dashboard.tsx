@@ -14,7 +14,7 @@ import {
   InvestigationProgressPanel,
 } from "@/components/maris/IncidentWorkflow";
 import { useIncidentStore } from "@/hooks/useIncidents";
-import { useIncidentPersistence } from "@/hooks/useIncidentPersistence";
+import { useIncidentPersistence, useIncidentHydration } from "@/hooks/useIncidentPersistence";
 import {
   completeStage,
   deriveEstimatedVolumeM3,
@@ -127,6 +127,8 @@ export default function Dashboard() {
 
   // Persist incident snapshots to the backend (best-effort, offline-safe).
   useIncidentPersistence(activeManagedIncident);
+  // Resume a previous session's workflow after page refresh (best-effort).
+  useIncidentHydration();
 
   // Analysis simulation steps — mapped onto the Prompt-8 investigation
   // stages so the Command Center progress reflects ACTUAL completion.

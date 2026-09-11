@@ -120,6 +120,9 @@ export function workflowStatus(wf: InvestigationWorkflow): IncidentStatus {
   if (done.has("evidence_fusion")) return "impact_assessment";
   if (done.has("ais_correlation")) return "candidates_ranked";
   if (done.has("quantification")) return "evidence_updated";
+  // Only the inherent DETECTION stage complete → still awaiting operator
+  // investigation. The pipeline has NOT started.
+  if (done.size === 1 && done.has("detection")) return "unverified";
   if (done.size > 0) return "under_investigation";
   return "unverified";
 }
@@ -758,6 +761,83 @@ export function markReportGenerated(): void {
         "REPORT READY",
         `Investigation report generated — ${incident.incidentNumber} · REQUIRES VALIDATION`,
       ),
+    };
+  });
+}
+
+/**
+ * Hydrate the active incident from its persisted snapshot (page refresh
+ * continuity). The backend row is the SAME incident (same incidentNumber)
+ * recorded from real session data, so it is adopted only when it carries
+ * MORE history than the local deterministic seed — first runs stay
+ * seed-driven, previous sessions resume exactly where they left off.
+ */
+export interface PersistedIncidentSnapshot {
+  incidentNumber: string;
+  status: string;
+  severity: string;
+  areaKm2?: number;
+  estimatedVolumeM3?: number;
+  confidence?: number;
+  currentSummary: string;
+  lastUpdatedAt: string;
+  timeline: Array<{
+    id: string;
+    timestamp: string;
+    eventType: string;
+    description: string;
+    source: string;
+    severity: string;
+  }>;
+  workflow?: {
+    runningStage?: string;
+    completedStages: string[];
+    reportGenerated: boolean;
+    reportExportedAt?: string;
+    lastError?: string;
+  } | null;
+}
+
+export function hydrateFromPersisted(row: PersistedIncidentSnapshot): void {
+  mutate((s) => {
+    const incident = s.incidents.find(
+      (i) => i.incidentNumber === row.incidentNumber,
+    );
+    if (!incident) return s;
+    if (row.timeline.length <= incident.timeline.length) return s; // local is authoritative
+    if (incident.workflow.reportGenerated) return s; // already complete locally
+
+    const wf: InvestigationWorkflow = {
+      runningStage: null, // never resume mid-run; user restarts the pipeline
+      completedStages: (row.workflow?.completedStages ?? []).filter((id): id is InvestigationStageId =>
+        INVESTIGATION_STAGES.some((st) => st.id === id),
+      ),
+      reportGenerated: row.workflow?.reportGenerated ?? false,
+      reportExportedAt: row.workflow?.reportExportedAt ?? null,
+      lastError: row.workflow?.lastError ?? null,
+    };
+    if (wf.completedStages.length === 0) return s; // nothing meaningful to resume
+
+    const status = wf.reportGenerated
+      ? ("requires_validation" as IncidentStatus)
+      : workflowStatus(wf);
+    const updated: ManagedIncident = {
+      ...incident,
+      status,
+      areaKm2: row.areaKm2 ?? incident.areaKm2,
+      estimatedVolumeM3: row.estimatedVolumeM3 ?? incident.estimatedVolumeM3,
+      confidence: row.confidence ?? incident.confidence,
+      currentSummary: row.currentSummary ?? incident.currentSummary,
+      lastUpdatedAt: row.lastUpdatedAt,
+      timeline: row.timeline.map((e) => ({
+        ...e,
+        severity: (e.severity as EventSeverity) ?? "info",
+      })),
+      workflow: wf,
+    };
+    return {
+      ...s,
+      incidents: s.incidents.map((i) => (i.id === incident.id ? updated : i)),
     };
   });
 }
