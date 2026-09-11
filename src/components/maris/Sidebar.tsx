@@ -12,6 +12,7 @@ import {
   Layers,
   Orbit,
   Radar,
+  RotateCcw,
   ScanEye,
   Ship,
   Sparkles,
@@ -22,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   STATUS_LABELS,
+  resetDemo,
   type ManagedIncident,
 } from "@/data/incidentStore";
 import type { MapLayer, PanelView, OilSpillIncident } from "@/data/types";
@@ -275,8 +277,8 @@ export default function Sidebar({
             })}
           </div>
 
-          {/* Demo Button */}
-          <div className="mt-auto px-3 py-3">
+          {/* Demo Buttons */}
+          <div className="mt-auto space-y-1.5 px-3 py-3">
             <button
               onClick={onRunInvestigation}
               disabled={isAnalyzing}
@@ -298,6 +300,15 @@ export default function Sidebar({
                   Run Investigation
                 </>
               )}
+            </button>
+            <button
+              onClick={resetDemo}
+              disabled={isAnalyzing}
+              className="flex w-full items-center justify-center gap-2 rounded border border-sky-200/10 px-3 py-1.5 text-[10px] text-zinc-400 transition-all hover:border-zinc-600 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Reset the demo incident to its deterministic UNVERIFIED seed state"
+            >
+              <RotateCcw className="size-3" />
+              Reset Demo
             </button>
           </div>
         </div>

@@ -867,6 +867,63 @@ export function resetInvestigation(): void {
   });
 }
 
+/**
+ * RESET DEMO (Prompt-9 §19): restore MARIS-INC-0001 to its deterministic
+ * seed state — UNVERIFIED, seed timeline, one fresh unacknowledged
+ * incident alert. Dedup identity (incident number) is preserved, so no
+ * MARIS-INC-0002 is ever created; local analysis history is cleared.
+ */
+export function resetDemo(): void {
+  mutate((s) => {
+    const incident = findActive(s);
+    if (!incident) return s;
+
+    const wf = initialWorkflow();
+    const reset: ManagedIncident = {
+      ...incident,
+      status: "unverified",
+      severity: "medium",
+      areaKm2: DEMO_INCIDENT.polygon.areaKm2,
+      estimatedVolumeM3: null, // re-derived when HSI evidence is reloaded
+      confidence: DEMO_INCIDENT.confidence.score,
+      currentSummary:
+        "Possible oil slick detected — unverified. Requires validation.",
+      lastUpdatedAt: new Date().toISOString(),
+      workflow: wf,
+    };
+
+    return {
+      ...s,
+      incidents: s.incidents.map((i) =>
+        i.id === incident.id ? reset : i,
+      ),
+      // Fresh operational alert for the re-initialized incident. The old
+      // unread alert is replaced, not duplicated (one live new-incident
+      // alert per incident at a time).
+      notifications: [
+        {
+          id: notificationId(),
+          kind: "new_incident" as const,
+          incidentId: incident.id,
+          incidentNumber: incident.incidentNumber,
+          title: "NEW MARITIME INCIDENT",
+          detail: `Possible oil slick detected — ${reset.areaKm2} km² · confidence ${reset.confidence}% · STATUS: UNVERIFIED · Requires validation`,
+          timestamp: new Date().toISOString(),
+          read: false,
+        },
+        ...s.notifications.filter(
+          (n) =>
+            !(
+              n.kind === "new_incident" &&
+              n.incidentId === incident.id &&
+              !n.read
+            ),
+        ),
+      ],
+    };
+  });
+}
+
 // ─── SELECTION / NOTIFICATION CONTROLS ───────────────────────────
 
 export function setActiveIncident(incidentId: string | null): void {
@@ -908,6 +965,17 @@ let seeded = false;
  * restarting the application never fabricates a different past. New
  * evidence recorded during the session extends this history with real
  * timestamps.
+ *
+ * ROOT-CAUSE NOTE: this runs at MODULE LOAD, not lazily on first read.
+ * Seeding lazily meant every consumer that read the raw snapshot
+ * (useSyncExternalStore via getSnapshot) saw the EMPTY bootstrap state on
+ * first render, and render paths that returned early meant the lazy
+ * accessor could stay unreached — leaving activeIncidentId = null and
+ * notifications = [] for the whole session. The demo incident must EXIST
+ * before any screen renders (Prompt-9 §2: incident created on detection,
+ * NOT on Run Investigation), so initialization happens the moment the
+ * store module is imported. Deterministic + once-only: no duplicate
+ * incidents across renders, navigation or page refresh.
  */
 export function ensureDemoSeed(): void {
   if (seeded) return;
@@ -996,6 +1064,12 @@ export function getIncidentStore(): IncidentStoreState {
   ensureDemoSeed();
   return snapshot;
 }
+
+// The seed runs at module load — importing the store anywhere (screens,
+// AI analyst context, persistence hooks) guarantees MARIS-INC-0001 exists
+// BEFORE any UI renders. A genuine empty state then only ever occurs when
+// there truly are ZERO incidents.
+ensureDemoSeed();
 
 export { subscribe, getSnapshot };
 
