@@ -795,16 +795,14 @@ export default function Globe3DView({
   // (1× = real-time), flushed to React state at 5 Hz. The SAME clock drives
   // the incident replay AND the demo-AIS traffic simulation (no second
   // clock). When playback reaches the end of the recorded demo window the
-  // clock keeps advancing into the simulated future — traffic keeps moving
-  // continuously rather than teleporting back to the window start.
-  // The clock ALWAYS advances (starting from the end of the recorded
-  // window) — the demo-AIS fleet reads it every preRender frame, so
-  // vessels travel continuously from mount without the user having to
-  // press the replay Play button. The replay playhead (setPlaying) only
-  // controls evidence-window playback, never traffic movement.
-  const simMsRef = useRef<number>(endMs);
+  // clock keeps advancing — traffic keeps moving continuously. The clock
+  // STARTS AT THE REPLAY WINDOW START and LOOPS the replay: when it passes
+  // the window end it wraps back to the start, so the timeline plays like
+  // a continuous replay. It runs from mount — the demo-AIS fleet reads it
+  // every preRender frame, so vessels travel without the user pressing
+  // the replay Play button (that button only marks replay UI state).
+  const simMsRef = useRef<number>(startMs);
   useEffect(() => {
-    // Auto-start: the sim clock (and therefore traffic) runs from mount.
     let raf = 0;
     let last = performance.now();
     let t = simMsRef.current;
@@ -813,6 +811,8 @@ export default function Globe3DView({
       const dt = now - last;
       last = now;
       t += dt * speed;
+      // Loop the replay: past the window end, wrap to the window start.
+      if (t > endMs + 60_000) t = startMs;
       simMsRef.current = t;
       // 5 Hz UI flush — the renderer reads the ref per frame, no re-render.
       if (now - lastFlush >= 200) {
@@ -823,7 +823,7 @@ export default function Globe3DView({
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [speed]);
+  }, [speed, startMs, endMs]);
 
   // Replay seeking (play button / evidence ticks / reset) sets the SAME
   // clock — never a second time source. Seeking moves the clock; the rAF
@@ -1097,8 +1097,9 @@ export default function Globe3DView({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  // Replay control: play/pause the (always-running) clock.
-                  // Play from the window start if playback finished.
+                  // Replay control: play from the window start (or from the
+                  // current position when resuming mid-window). The clock is
+                  // always running underneath — this toggles replay playback.
                   if (!playing && clockMs >= endMs) seekClock(startMs);
                   setPlaying((p) => !p);
                 }}
@@ -1177,7 +1178,7 @@ export default function Globe3DView({
               <div
                 className="pointer-events-none absolute top-2 h-5 w-px bg-sky-300/90 shadow-[0_0_6px_rgba(125,211,252,0.5)]"
                 style={{
-                  left: `${((clockMs - startMs) / Math.max(1, endMs - startMs)) * 100}%`,
+                  left: `${Math.min(100, Math.max(0, ((clockMs - startMs) / Math.max(1, endMs - startMs)) * 100))}%`,
                 }}
               />
             </div>
