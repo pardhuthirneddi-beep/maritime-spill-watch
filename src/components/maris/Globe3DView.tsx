@@ -198,7 +198,7 @@ export default function Globe3DView({
 
   const startMs = useMemo(() => replayStartMs(vessels), [vessels]);
   const endMs = useMemo(() => replayEndMs(vessels), [vessels]);
-  const simMs = simMsState ?? endMs;
+  const simMs = simMsState ?? startMs;
   // Evidence replay frame: the frame follows the live clock, so evidence
   // appears per its timestamps as the replay progresses.
   const frame = useMemo(
@@ -795,24 +795,24 @@ export default function Globe3DView({
   // (1× = real-time), flushed to React state at 5 Hz. The SAME clock drives
   // the incident replay AND the demo-AIS traffic simulation (no second
   // clock). When playback reaches the end of the recorded demo window the
-  // clock keeps advancing — traffic keeps moving continuously. The clock
-  // STARTS AT THE REPLAY WINDOW START and LOOPS the replay: when it passes
-  // the window end it wraps back to the start, so the timeline plays like
-  // a continuous replay. It runs from mount — the demo-AIS fleet reads it
-  // every preRender frame, so vessels travel without the user pressing
-  // the replay Play button (that button only marks replay UI state).
+  // clock keeps advancing — traffic follows it. The clock STARTS AT THE
+  // REPLAY WINDOW START. The play/pause button STOPS/STARTS the clock
+  // itself: paused = frozen simulation everywhere (fleet + investigation
+  // vessels + playhead); playing = the window plays through and LOOPS
+  // (past the end it wraps to the start, clamped so the playhead never
+  // leaves the timeline).
   const simMsRef = useRef<number>(startMs);
   useEffect(() => {
+    if (!playing) return; // paused: no timer at all — everything frozen
     let raf = 0;
     let last = performance.now();
-    let t = simMsRef.current;
     let lastFlush = 0;
     const step = (now: number) => {
       const dt = now - last;
       last = now;
-      t += dt * speed;
+      let t = simMsRef.current + dt * speed;
       // Loop the replay: past the window end, wrap to the window start.
-      if (t > endMs + 60_000) t = startMs;
+      if (t > endMs) t = startMs + (t - endMs);
       simMsRef.current = t;
       // 5 Hz UI flush — the renderer reads the ref per frame, no re-render.
       if (now - lastFlush >= 200) {
@@ -823,7 +823,7 @@ export default function Globe3DView({
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [speed, startMs, endMs]);
+  }, [playing, speed, startMs, endMs]);
 
   // Replay seeking (play button / evidence ticks / reset) sets the SAME
   // clock — never a second time source. Seeking moves the clock; the rAF
@@ -1097,9 +1097,8 @@ export default function Globe3DView({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  // Replay control: play from the window start (or from the
-                  // current position when resuming mid-window). The clock is
-                  // always running underneath — this toggles replay playback.
+                  // Replay control: play from the window start if playback
+                  // finished; otherwise resume from the current position.
                   if (!playing && clockMs >= endMs) seekClock(startMs);
                   setPlaying((p) => !p);
                 }}

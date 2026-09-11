@@ -301,7 +301,9 @@ export function updateTrafficLayer(
     const showBracket = range < SHOW_BRACKET_BELOW;
     slot.bracket.show = showBracket;
     if (showBracket) {
-      slot.bracket.position = slot.symbol.position;
+      // Distinct instance — sharing the symbol's reference means neither
+      // billboard would dirty correctly on the next frame's assignment.
+      slot.bracket.position = Cesium.Cartesian3.clone(slot.symbol.position);
       const desiredBracket = state;
       if (slot.bracketImageKey !== desiredBracket) {
         slot.bracketImageKey = desiredBracket;
@@ -314,7 +316,8 @@ export function updateTrafficLayer(
     const showLabel = range < SHOW_LABEL_BELOW;
     slot.label.show = showLabel;
     if (showLabel) {
-      slot.label.position = slot.symbol.position;
+      // Distinct instance — see symbol note above.
+      slot.label.position = Cesium.Cartesian3.clone(slot.symbol.position);
       // Numeric cell key (no string allocation per vessel per frame).
       const cell =
         Math.round(p.lat * LABEL_CELL) * 4096 +
@@ -335,9 +338,11 @@ export function updateTrafficLayer(
       for (let s = TRAIL_STEPS; s >= 0; s--) {
         const t = simMs - s * (TRAIL_LENGTH_MS / TRAIL_STEPS);
         const tp = positionAt(v, t, epochMs);
-        trailScratch.push(toCartesian(tp.lat, tp.lon, 40, trailVecs[s]));
+        // Fresh Cartesian3 per point — reused vectors would alias points
+        // across the array and across vessels (all trails would collapse).
+        trailScratch.push(Cesium.Cartesian3.clone(toCartesian(tp.lat, tp.lon, 40, trailVecs[s])));
       }
-      slot.trail.positions = trailScratch;
+      slot.trail.positions = trailScratch.slice();
       slot.trail.width = sel ? 1.8 : 0.8;
       // Shared materials — never Material.fromType per frame.
       slot.trail.material = trailMaterials[sel ? 1 : 0];
