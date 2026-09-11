@@ -185,15 +185,24 @@ export default function Globe3DView({
   const [selection, setSelection] = useState<SceneSelection>(null);
   const [replayMs, setReplayMs] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [replayState, setReplayState] = useState<number | null>(null);
   // Centralized simulation clock: 1× = real-time (1 sim-ms per real-ms).
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
+  // Clock UI mirror (5 Hz flush from the rAF loop below); null until the
+  // first flush — resolved to the replay-window end for initial render.
+  const [simMsState, setSimMs] = useState<number | null>(null);
 
 
   const startMs = useMemo(() => replayStartMs(vessels), [vessels]);
   const endMs = useMemo(() => replayEndMs(vessels), [vessels]);
+  const simMs = simMsState ?? endMs;
+  // Evidence replay frame: while playing, the frame follows the live clock
+  // (so evidence appears per its timestamps); otherwise it follows the
+  // last seek, defaulting to the end-of-window state.
+  const effectiveReplayMs = playing ? simMs : replayMs;
   const frame = useMemo(
-    () => buildReplayFrame(vessels, EVIDENCE_EVENTS, replayMs ?? endMs),
-    [vessels, replayMs, endMs],
+    () => buildReplayFrame(vessels, EVIDENCE_EVENTS, effectiveReplayMs ?? endMs),
+    [vessels, effectiveReplayMs, endMs],
   );
 
   const isLayerOn = useCallback(
@@ -794,32 +803,35 @@ export default function Globe3DView({
   // controls evidence-window playback, never traffic movement.
   const simMsRef = useRef<number>(endMs);
   useEffect(() => {
-    if (replayMs !== null) simMsRef.current = replayMs;
-  }, [replayMs]);
-
-  useEffect(() => {
     // Auto-start: the sim clock (and therefore traffic) runs from mount.
     let raf = 0;
     let last = performance.now();
-    let simMs = simMsRef.current;
+    let t = simMsRef.current;
     let lastFlush = 0;
     const step = (now: number) => {
       const dt = now - last;
       last = now;
-      simMs += dt * speed;
-      simMsRef.current = simMs;
-      // Flush to React state only while replay playback is active (the
-      // evidence timeline UI follows it). Traffic reads the ref per frame.
-      if (playing && now - lastFlush >= 200) {
+      t += dt * speed;
+      simMsRef.current = t;
+      // 5 Hz UI flush — the renderer reads the ref per frame, no re-render.
+      if (now - lastFlush >= 200) {
         lastFlush = now;
-        setReplayMs(simMs);
+        setSimMs(t);
       }
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speed]);
+
+  // Replay seeking (play button / evidence ticks / reset) sets the SAME
+  // clock — never a second time source. Seeking moves the clock; the rAF
+  // loop keeps advancing from the new instant.
+  const seekClock = useCallback((ms: number) => {
+    simMsRef.current = ms;
+    setSimMs(ms);
+    setReplayState(ms);
+  }, []);
 
   // ── DEMO AIS TRAFFIC (per-frame, outside React) ────────────────────
   // Drives the batched traffic layer directly from the SAME sim clock via
@@ -938,14 +950,15 @@ export default function Globe3DView({
     setSelection(null);
     onVesselSelect(null);
     setPlaying(false);
-    setReplayMs(null);
+    setReplayState(null);
+    seekClock(endMs);
     viewerRef.current?.camera.flyHome(1.6);
   };
 
   const fmtTime = (ms: number) =>
     new Date(ms).toLocaleTimeString("en-GB", { hour12: false, timeZone: "UTC" }) + " UTC";
 
-  const clockMs = replayMs ?? endMs; // the one simulation clock everyone reads
+  const clockMs = simMs; // the one simulation clock everyone reads
 
   const selCorrelation = useMemo(() => {
     if (!selectedVesselMmsi || !incident) return null;
@@ -1083,7 +1096,9 @@ export default function Globe3DView({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  if (replayMs !== null && replayMs >= endMs) setReplayMs(startMs);
+                  // (Re)start evidence playback: seek the single clock to
+                  // the window start; the clock is always running.
+                  if (!playing || clockMs >= endMs) seekClock(startMs);
                   setPlaying((p) => !p);
                 }}
                 className={cn(
@@ -1135,7 +1150,7 @@ export default function Globe3DView({
                   <button
                     key={ev.id}
                     title={`${ev.time.slice(11, 19)}Z — ${ev.label}`}
-                    onClick={() => setReplayMs(t)}
+                    onClick={() => seekClock(t)}
                     className="group absolute top-2 -translate-x-1/2 cursor-pointer"
                     style={{ left: `${frac * 100}%` }}
                   >

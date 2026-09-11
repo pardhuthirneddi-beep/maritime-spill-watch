@@ -103,6 +103,8 @@ const trailVecs: Cesium.Cartesian3[] = Array.from(
 let selectedMmsi: string | null = null;
 /** Whether the investigation candidate (rank-1 attribution) is marked. */
 let candidateMmsi: string | null = null;
+/** Last DEV debug-log sim timestamp (throttle). */
+let debugLastMs: number | null = null;
 
 export function setTrafficSelection(mmsi: string | null, candidate: string | null): void {
   selectedMmsi = mmsi;
@@ -238,6 +240,22 @@ export function updateTrafficLayer(
 ): void {
   if (!handles) return;
   const fleet = getFleet();
+
+  // DEV-only movement verification (§13): log one vessel's clock/position
+  // every ~5 s so AIS progression (T0→T1, A→B→C) is observable in the
+  // console. Stripped from production builds.
+  if (import.meta.env.DEV && fleet.length > 5) {
+    const dbg = fleet[5];
+    if (simMs - (debugLastMs ?? simMs) >= 5000 || debugLastMs === null) {
+      debugLastMs = simMs;
+      const dp = positionAt(dbg, simMs, epochMs);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[MARIS AIS] sim=${new Date(simMs).toISOString()} mmsi=${dbg.mmsi} ` +
+          `lat=${dp.lat.toFixed(5)} lon=${dp.lon.toFixed(5)} hdg=${dp.headingDeg.toFixed(1)}`,
+      );
+    }
+  }
   const camera = scene.camera;
   const camPosCarto = camera.positionCartographic;
   const camLat = Cesium.Math.toDegrees(camPosCarto.latitude);
