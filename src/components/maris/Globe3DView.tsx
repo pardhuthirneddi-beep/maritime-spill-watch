@@ -206,6 +206,12 @@ export default function Globe3DView({
     const container = containerRef.current;
     if (!container || viewerRef.current) return;
 
+    // Hidden sink for Cesium's credit/attribution DOM — keeps it out of
+    // the visible globe UI (attribution still preserved offscreen).
+    const creditSink = document.createElement("div");
+    creditSink.style.display = "none";
+    container.appendChild(creditSink);
+
     let viewer: Cesium.Viewer;
     try {
       viewer = new Cesium.Viewer(container, {
@@ -220,6 +226,7 @@ export default function Globe3DView({
         infoBox: false,
         selectionIndicator: false,
         requestRenderMode: false,
+        creditContainer: creditSink,
         baseLayer: Cesium.ImageryLayer.fromProviderAsync(
           Cesium.TileMapServiceImageryProvider.fromUrl(
             Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"),
