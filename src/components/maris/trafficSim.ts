@@ -105,83 +105,83 @@ const CORRIDORS: Corridor[] = [
   {
     name: "Gujarat–Mumbai coastal",
     waypoints: [[21.5, 68.5], [20.8, 69.2], [20.4, 70.2], [20.2, 71.2], [19.6, 72.0], [18.7, 72.5]],
-    count: 46, speedKn: [8, 16],
+    count: 22, speedKn: [8, 16],
   },
   {
     name: "Mumbai–Kochi coastal",
     waypoints: [[18.7, 72.5], [16.5, 73.0], [14.2, 74.0], [13.0, 74.3], [12.0, 74.6], [10.0, 75.3], [9.7, 75.75]],
-    count: 34, speedKn: [8, 15],
+    count: 16, speedKn: [8, 15],
   },
   {
     name: "Kochi–Colombo–Sri Lanka",
     waypoints: [[9.7, 75.75], [8.5, 76.4], [7.4, 77.7], [6.4, 78.9], [5.9, 80.0]],
-    count: 28, speedKn: [9, 16],
+    count: 14, speedKn: [9, 16],
   },
   {
     name: "Chennai–Visakhapatnam",
     waypoints: [[13.1, 80.4], [14.9, 81.2], [16.4, 82.8], [17.9, 84.3], [18.6, 84.7], [19.4, 85.9], [20.0, 86.7]],
-    count: 30, speedKn: [9, 17],
+    count: 15, speedKn: [9, 17],
   },
   {
     name: "Visakhapatnam–Odisha–Kolkata",
     waypoints: [[20.0, 86.7], [20.7, 87.4], [21.3, 88.2], [21.6, 88.9], [21.5, 89.1]],
-    count: 22, speedKn: [8, 15],
+    count: 11, speedKn: [8, 15],
   },
   {
     name: "Bay of Bengal crossing",
     waypoints: [[6.7, 82.2], [8.5, 84.5], [10.5, 87.0], [12.5, 89.5], [14.5, 91.5]],
-    count: 24, speedKn: [10, 18],
+    count: 14, speedKn: [10, 18],
   },
   {
     name: "Andaman & Nicobar approaches",
     waypoints: [[10.5, 92.5], [11.5, 93.5], [12.6, 94.2], [13.6, 95.0], [14.6, 96.0]],
-    count: 16, speedKn: [9, 16],
+    count: 9, speedKn: [9, 16],
   },
   // ── GLOBAL ARTERIES ───────────────────────────────────────────────
   {
     name: "Arabian Sea–Gulf (Hormuz)",
     waypoints: [[24.8, 58.5], [24.0, 59.5], [25.0, 57.5], [26.2, 56.4], [26.6, 55.2]],
-    count: 36, speedKn: [9, 17],
+    count: 30, speedKn: [9, 17],
   },
   {
     name: "Red Sea–Suez approaches",
     waypoints: [[12.6, 43.4], [15.0, 42.2], [18.5, 40.0], [21.5, 38.2], [24.0, 36.5]],
-    count: 30, speedKn: [8, 15],
+    count: 26, speedKn: [8, 15],
   },
   {
     name: "Malacca Strait",
     waypoints: [[5.9, 95.0], [6.0, 96.5], [5.9, 97.8], [4.8, 99.5], [3.2, 100.3], [2.2, 101.8], [1.8, 102.1], [1.6, 102.7], [1.4, 103.0]],
-    count: 42, speedKn: [8, 16],
+    count: 34, speedKn: [8, 16],
   },
   {
     name: "South China Sea–Singapore",
     waypoints: [[2.0, 104.4], [3.5, 106.5], [7.0, 109.5], [11.0, 111.5], [15.0, 113.5]],
-    count: 38, speedKn: [9, 18],
+    count: 32, speedKn: [9, 18],
   },
   {
     name: "East Asia–Shanghai",
     waypoints: [[22.3, 116.4], [24.5, 119.0], [27.5, 122.0], [30.5, 122.9], [31.4, 122.6]],
-    count: 28, speedKn: [9, 17],
+    count: 24, speedKn: [9, 17],
   },
   {
     name: "Mediterranean east–west",
     waypoints: [[31.7, 33.0], [33.8, 25.0], [35.2, 19.5], [36.2, 15.5], [37.0, 12.0], [38.0, 5.5]],
-    count: 30, speedKn: [9, 17],
+    count: 26, speedKn: [9, 17],
   },
   {
     name: "Gibraltar approaches",
     waypoints: [[36.05, -4.2], [36.1, -5.4], [36.0, -6.8], [36.5, -8.0], [37.4, -9.8], [38.5, -10.5], [40.0, -11.5]],
-    count: 20, speedKn: [8, 16],
+    count: 18, speedKn: [8, 16],
   },
   {
     name: "North Atlantic lanes",
     waypoints: [[40.5, -12.0], [45.0, -20.0], [48.5, -30.0], [50.0, -40.0], [49.5, -50.0]],
-    count: 24, speedKn: [10, 19],
+    count: 30, speedKn: [10, 19],
   },
   {
     name: "Cape of Good Hope",
     waypoints: [[-34.7, 18.4], [-35.2, 20.2], [-35.2, 22.5], [-34.8, 25.5], [-33.5, 28.0]],
-    count: 24, speedKn: [9, 17],
+    count: 30, speedKn: [9, 17],
   },
   {
     name: "South Atlantic–Buenos",
@@ -191,19 +191,78 @@ const CORRIDORS: Corridor[] = [
   {
     name: "Panama approaches",
     waypoints: [[8.2, -79.7], [7.0, -79.8], [7.0, -81.4], [7.4, -83.2], [7.8, -85.2], [8.0, -86.6]],
-    count: 18, speedKn: [8, 15],
+    count: 16, speedKn: [8, 15],
   },
   {
     name: "Transpacific–Japan",
     waypoints: [[34.5, 140.5], [33.0, 148.0], [31.0, 158.0], [28.5, 170.0], [26.0, 182.0]],
-    count: 18, speedKn: [10, 19],
+    count: 22, speedKn: [10, 19],
   },
   {
     name: "Australia–Bass Strait",
     waypoints: [[-34.0, 152.2], [-35.6, 151.8], [-37.2, 150.9], [-38.5, 149.2], [-39.7, 147.2], [-39.9, 145.0], [-39.0, 143.6], [-38.6, 144.4]],
-    count: 14, speedKn: [8, 15],
+    count: 12, speedKn: [8, 15],
   },
 ];
+
+// ── OPEN-OCEAN LANES (very low density — the empty-ocean population so the
+// globe never looks coastline-hugging). Sparse deep-water routes; each
+// carries only a handful of vessels. Same water-safe validation applies.
+const OPEN_OCEAN_LANES: Corridor[] = [
+  {
+    name: "Cape–Australia southern lane",
+    waypoints: [[-36.0, 25.0], [-39.0, 45.0], [-42.0, 70.0], [-43.5, 95.0], [-41.0, 115.0], [-37.5, 135.0]],
+    count: 7, speedKn: [11, 18],
+  },
+  {
+    name: "South Indian Ocean crossing",
+    waypoints: [[-30.0, 40.0], [-33.0, 60.0], [-35.0, 80.0], [-33.0, 100.0], [-30.0, 120.0]],
+    count: 6, speedKn: [11, 18],
+  },
+  {
+    name: "North Pacific great circle",
+    waypoints: [[36.0, 125.0], [40.0, 150.0], [45.0, 175.0], [48.0, -160.0], [47.0, -135.0]],
+    count: 7, speedKn: [11, 19],
+  },
+  {
+    name: "Central Pacific lanes",
+    waypoints: [[15.0, -170.0], [10.0, -140.0], [7.0, -115.0]],
+    count: 5, speedKn: [10, 17],
+  },
+  {
+    name: "South Atlantic–Cape route",
+    waypoints: [[-25.0, -15.0], [-30.0, 5.0], [-33.5, 18.0]],
+    count: 5, speedKn: [10, 17],
+  },
+  {
+    name: "Atlantic equatorial lane",
+    waypoints: [[8.0, -30.0], [5.0, -20.0], [3.0, -10.0], [4.0, 0.0]],
+    count: 5, speedKn: [10, 17],
+  },
+  {
+    name: "Indian Ocean north crossing",
+    waypoints: [[12.0, 65.0], [10.0, 72.0], [7.0, 82.0], [5.5, 90.0]],
+    count: 7, speedKn: [10, 18],
+  },
+  {
+    name: "Tasman–South Pacific",
+    waypoints: [[-38.0, 150.0], [-41.0, 165.0], [-44.0, 180.0], [-47.0, -165.0]],
+    count: 4, speedKn: [10, 17],
+  },
+  {
+    name: "Madagascar–Mauritius regional",
+    waypoints: [[-18.0, 48.0], [-20.5, 55.5], [-22.0, 60.0]],
+    count: 3, speedKn: [9, 15],
+  },
+  {
+    name: "Hawaii–US west coast",
+    waypoints: [[21.0, -157.5], [24.0, -150.0], [28.0, -140.0], [32.0, -130.0], [34.0, -122.0]],
+    count: 4, speedKn: [10, 17],
+  },
+];
+// Total ≈ 470 vessels: ~85% on the global shipping network above, ~15%
+// across sparse open-ocean lanes. Density gradient mirrors real AIS:
+// straits/port approaches > arteries > open ocean.
 // Corridor count: 20 × ~25 avg ≈ 500 vessels. Performance-safe (batched).
 
 // ─── VESSEL TYPES ────────────────────────────────────────────────────
@@ -330,7 +389,7 @@ function buildFleet(): void {
   const usedNames = new Set<string>();
   let nameSeq = 0;
 
-  for (const corridor of CORRIDORS) {
+  for (const corridor of [...CORRIDORS, ...OPEN_OCEAN_LANES]) {
     const { waypoints } = corridor;
 
     // Precompute leg lengths & cumulative distances for this corridor.

@@ -787,22 +787,30 @@ export default function Globe3DView({
   // clock). When playback reaches the end of the recorded demo window the
   // clock keeps advancing into the simulated future — traffic keeps moving
   // continuously rather than teleporting back to the window start.
-  const simMsRef = useRef<number>(startMs);
-  simMsRef.current = replayMs ?? endMs;
+  // The clock ALWAYS advances (starting from the end of the recorded
+  // window) — the demo-AIS fleet reads it every preRender frame, so
+  // vessels travel continuously from mount without the user having to
+  // press the replay Play button. The replay playhead (setPlaying) only
+  // controls evidence-window playback, never traffic movement.
+  const simMsRef = useRef<number>(endMs);
+  useEffect(() => {
+    if (replayMs !== null) simMsRef.current = replayMs;
+  }, [replayMs]);
 
   useEffect(() => {
-    if (!playing) return;
+    // Auto-start: the sim clock (and therefore traffic) runs from mount.
     let raf = 0;
     let last = performance.now();
-    let simMs = replayMs ?? startMs;
+    let simMs = simMsRef.current;
     let lastFlush = 0;
     const step = (now: number) => {
       const dt = now - last;
       last = now;
       simMs += dt * speed;
-      // No wrap: past the end of the recorded window we simply continue in
-      // simulated time (evidence stays at its final state — correct).
-      if (now - lastFlush >= 200) {
+      simMsRef.current = simMs;
+      // Flush to React state only while replay playback is active (the
+      // evidence timeline UI follows it). Traffic reads the ref per frame.
+      if (playing && now - lastFlush >= 200) {
         lastFlush = now;
         setReplayMs(simMs);
       }
@@ -811,7 +819,7 @@ export default function Globe3DView({
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, speed, startMs, endMs]);
+  }, [speed]);
 
   // ── DEMO AIS TRAFFIC (per-frame, outside React) ────────────────────
   // Drives the batched traffic layer directly from the SAME sim clock via
