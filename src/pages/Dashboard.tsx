@@ -12,6 +12,7 @@ import {
   IncidentStatusBar,
 } from "@/components/maris/IncidentWorkflow";
 import IncidentAlertOverlay from "@/components/maris/IncidentAlertOverlay";
+import { InvestigationProgressOverlay } from "@/components/maris/InvestigationProgressOverlay";
 import { useIncidentStore } from "@/hooks/useIncidents";
 import { useIncidentPersistence, useIncidentHydration } from "@/hooks/useIncidentPersistence";
 import {
@@ -388,6 +389,13 @@ export default function Dashboard() {
             onVesselSelect={handleVesselSelect}
           />
 
+          {/* User-controlled investigation progress — open/minimize/close
+              without ever pausing the pipeline (Prompt 11). */}
+          <InvestigationProgressOverlay
+            incident={activeManagedIncident}
+            isAnalyzing={state.isAnalyzing}
+          />
+
           {/* Operational notifications — non-blocking command-center rail */}
           <NotificationRail
             notifications={incidentStore.notifications}
@@ -463,20 +471,13 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Analysis overlay */}
+          {/* Lightweight analysis indicator — replaces the old full-map
+              dim/blur overlay so the map stays visible and interactive
+              while the investigation pipeline runs. */}
           {state.isAnalyzing && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#050a12]/50 backdrop-blur-sm">
-              <div className="text-center">
-                <div className="flex justify-center mb-3">
-                  <div className="size-10 rounded-full border-2 border-orange-500/30 border-t-orange-500 animate-spin" />
-                </div>
-                <div className="text-[11px] text-zinc-300 font-medium mb-1">
-                  {state.analysisStep}
-                </div>
-                <div className="text-[9px] text-zinc-600">
-                  {state.analysisProgress}% complete
-                </div>
-              </div>
+            <div className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full border border-sky-200/10 bg-[#070d16]/90 px-3 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm">
+              <div className="size-3 rounded-full border-2 border-orange-500/30 border-t-orange-500 animate-spin" />
+              <span className="text-[9px] text-zinc-300">{state.analysisStep}</span>
             </div>
           )}
 
