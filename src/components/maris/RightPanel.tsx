@@ -23,10 +23,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import AnalystPanel from "./AnalystPanel";
-import {
-  IncidentCommandStrip,
-  IncidentTimelineView,
-} from "./IncidentCommand";
 import { InvestigationProgressPanel } from "./IncidentWorkflow";
 import { useIncidentStore } from "@/hooks/useIncidents";
 import type { ManagedIncident } from "@/data/incidentStore";
@@ -183,7 +179,7 @@ export default function RightPanel({
           <ThicknessPanel hyperspectral={hyperspectral} />
         )}
         {view === "timeline" && (
-          <IncidentTimelinePanel managedIncident={activeManagedIncident} timeline={timeline} />
+          <AnalysisChronologyPanel managedIncident={activeManagedIncident} timeline={timeline} />
         )}
         {view === "satellite" && incident && (
           <SatellitePanel incident={incident} environmental={environmental} />
@@ -212,37 +208,166 @@ export default function RightPanel({
   );
 }
 
-// ─── INCIDENT COMMAND (timeline view) ──────────────────────────────
+// ─── ANALYSIS CHRONOLOGY (timeline view) ───────────────────────────
+// Event history ONLY. Incident status/progress live in the incident
+// dialog (Command Center) — never here. No status entries, no progress
+// percentages, no stage state indicators in the chronology.
 
-function IncidentTimelinePanel({
+/** Analysis/processing sources shown as compact event tags. */
+const SOURCE_TAGS: Record<string, string> = {
+  SAR: "SAR",
+  AIS: "AIS",
+  DRIFT: "DRIFT",
+  HSI: "HSI",
+  REPORT: "REPORT",
+  MODEL: "SAR / MODEL",
+  EVIDENCE: "EVIDENCE",
+  ATTRIBUTION: "AIS / ATTRIBUTION",
+  ANALYSIS: "MARIS INTELLIGENCE",
+};
+
+/** Map store eventType → chronology source tag. */
+function sourceTag(eventType: string, source: string): string {
+  const t = eventType.toUpperCase();
+  if (t === "ANALYSIS START" || t === "ANALYSIS") return SOURCE_TAGS.ANALYSIS;
+  if (t.startsWith("SAR") || t === "DETECTION" || t === "GEOMETRY" || t === "AREA") return SOURCE_TAGS.SAR;
+  if (t.startsWith("AIS") || t === "CANDIDATES") return SOURCE_TAGS.ATTRIBUTION;
+  if (t.startsWith("DRIFT")) return SOURCE_TAGS.DRIFT;
+  if (t.startsWith("HSI") || t.includes("HYPERSPECTRAL")) return SOURCE_TAGS.HSI;
+  if (t.startsWith("REPORT") || t === "EXPORT") return SOURCE_TAGS.REPORT;
+  if (t.includes("EVIDENCE") || t === "QUANTIFICATION") return SOURCE_TAGS.EVIDENCE;
+  return source.toUpperCase();
+}
+
+/**
+ * Filter OUT state-indicator entries. Status changes, progress and
+ * lifecycle metadata are incident-dialog concerns, not analysis events.
+ * Analysis-stage bookkeeping ("... stage completed") is also dropped:
+ * the real analysis events recorded by the pipeline already describe
+ * the actual work performed.
+ */
+function isAnalysisEvent(eventType: string, description: string): boolean {
+  const t = eventType.toUpperCase();
+  if (t === "STATUS" || t === "INCIDENT" || t === "INVESTIGATION" || t === "STAGE") return false;
+  const d = description.toLowerCase();
+  if (d.includes("status")) return false;
+  // Progress-style state entries ("65% complete", "progress 40%") —
+  // never analysis events. A confidence figure ("confidence 91%") is.
+  if (/\d+%/.test(description) && (d.includes("complete") || d.includes("progress")))
+    return false;
+  if (d.endsWith("stage completed")) return false;
+  return true;
+}
+
+function AnalysisChronologyPanel({
   managedIncident,
   timeline,
 }: {
   managedIncident: ReturnType<typeof useIncidentStore>["incidents"][number] | null;
   timeline: TimelineEvent[];
 }) {
+  const managedEvents = (managedIncident?.timeline ?? []).filter((e) =>
+    isAnalysisEvent(e.eventType, e.description),
+  );
+
   return (
-    <div className="space-y-3 p-3">
-      <IncidentCommandStrip incident={managedIncident} incidents={[]} />
-      <IncidentTimelineView incident={managedIncident} />
-      {/* Legacy investigation chronology (vessel/detection/analysis events) */}
-      {timeline.length > 0 && (
-        <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">
-            Analysis Chronology
+    <div className="p-3">
+      {/* Header — incident identity only (no status, no progress) */}
+      <div className="mb-3 flex items-baseline justify-between">
+        <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+          Analysis Chronology
+        </div>
+        {managedIncident && (
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[8px] text-zinc-600">
+              {managedIncident.incidentNumber}
+            </span>
+            <span className="text-[7px] font-semibold uppercase tracking-[0.14em] text-orange-400/70">
+              Possible Oil Slick
+            </span>
           </div>
-          <div className="space-y-1.5">
-            {timeline.map((event, i) => (
-              <div key={i} className="flex items-baseline gap-2">
-                <span className="font-mono text-[9px] text-zinc-600">{event.time}</span>
-                <span className="text-[9px] text-zinc-400">{event.event}</span>
-              </div>
-            ))}
-          </div>
+        )}
+      </div>
+
+      {managedEvents.length > 0 ? (
+        <div className="space-y-0">
+          {managedEvents.map((e) => (
+            <ChronologyRow key={e.id} event={e} />
+          ))}
+        </div>
+      ) : timeline.length > 0 ? (
+        // Fallback: pre-analysis demo chronology (before any run).
+        <div className="space-y-2">
+          {timeline.map((event, i) => (
+            <div key={i} className="flex items-baseline gap-2">
+              <span className="font-mono text-[9px] text-zinc-600">{event.time}</span>
+              <span className="text-[9px] text-zinc-400">{event.event}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-[10px] text-zinc-600">
+          No analysis events recorded yet.
         </div>
       )}
     </div>
   );
+}
+
+function ChronologyRow({ event }: { event: ManagedTimelineEventRow }) {
+  return (
+    <div className="border-b border-sky-200/5 py-2.5 last:border-0">
+      <div className="font-mono text-[9px] text-zinc-600">
+        {fmtUtc(event.timestamp)}
+      </div>
+      <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200">
+        {event.description}
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <div className="text-[9px] leading-snug text-zinc-500">
+          {eventDetail(event.eventType)}
+        </div>
+        <span className="shrink-0 rounded border border-sky-200/10 bg-zinc-900 px-1.5 py-0.5 text-[7px] font-semibold tracking-wider text-zinc-500">
+          {sourceTag(event.eventType, event.source)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Short human-readable detail line describing what the analysis step did. */
+function eventDetail(eventType: string): string {
+  const t = eventType.toUpperCase();
+  if (t === "DETECTION") return "Satellite observation evaluated for oil-slick signatures.";
+  if (t === "ANALYSIS START") return "MARIS analysis pipeline initiated for SAR, AIS and environmental evidence.";
+  if (t === "ANALYSIS" || t === "AIS OBSERVATION") return "Recorded by the MARIS analysis engine during the investigation.";
+  if (t === "GEOMETRY" || t === "AREA") return "Candidate slick boundary and geographic geometry calculated.";
+  if (t.startsWith("AIS") || t === "CANDIDATES") return "Vessel tracks evaluated against the incident spatial and temporal window.";
+  if (t.startsWith("DRIFT")) return "Backward drift reconstruction estimated a possible source zone.";
+  if (t.startsWith("HSI") || t.includes("HYPERSPECTRAL")) return "Hyperspectral evidence evaluated for thickness classification.";
+  if (t === "EVIDENCE") return "SAR, AIS, drift and available HSI evidence combined for source assessment.";
+  if (t.startsWith("REPORT")) return "Investigation report generated and prepared for export.";
+  if (t === "EXPORT") return "Investigation report successfully exported.";
+  return "Analysis step recorded.";
+}
+
+type ManagedTimelineEventRow = {
+  id: string;
+  timestamp: string;
+  eventType: string;
+  description: string;
+  source: string;
+};
+
+function fmtUtc(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 // ─── OVERVIEW ───────────────────────────────────────────────────────

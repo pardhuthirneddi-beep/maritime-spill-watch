@@ -619,16 +619,18 @@ export function startInvestigation(): void {
     };
 
     const firstRun = incident.status === "unverified" || incident.status === "detected";
+    // Analysis chronology records the actual WORK starting — not a status
+    // transition (status lives in the incident dialog, not the timeline).
     const events = firstRun
       ? [
           ...incident.timeline,
           {
             id: eventId(),
             timestamp: new Date().toISOString(),
-            eventType: "INVESTIGATION",
-            description: "Investigation initiated — pipeline started",
-            source: "MARIS Incident Command",
-            severity: "important" as EventSeverity,
+            eventType: "ANALYSIS START",
+            description: "INVESTIGATION ANALYSIS STARTED",
+            source: "MARIS analysis engine",
+            severity: "info" as EventSeverity,
           },
         ]
       : incident.timeline;
@@ -642,15 +644,16 @@ export function startInvestigation(): void {
     return {
       ...s,
       incidents: s.incidents.map((i) => (i.id === incident.id ? updated : i)),
-      notifications: firstRun
-        ? pushNotification(
-            s,
-            incident,
-            "status_changed",
-            "STATUS CHANGED",
-            `Investigation initiated · ${incident.incidentNumber}`,
-          )
-        : s.notifications,
+      notifications:
+        firstRun
+          ? pushNotification(
+              s,
+              incident,
+              "status_changed",
+              "INVESTIGATION UPDATE",
+              `Investigation analysis started · ${incident.incidentNumber}`,
+            )
+          : s.notifications,
     };
   });
 }
@@ -767,8 +770,7 @@ export function markReportReady(): void {
         id: eventId(),
         timestamp: now,
         eventType: "REPORT",
-        description:
-          "Investigation report generated — REPORT READY. Export required to complete the investigation.",
+        description: "REPORT GENERATED",
         source: "MARIS report engine",
         severity: "important" as EventSeverity,
       },
@@ -823,6 +825,9 @@ export function markReportExported(format: ReportExportFormat): void {
       "investigation_complete",
     );
 
+    // Chronology gets the real EXPORT analysis event only. The resulting
+    // INVESTIGATION COMPLETE state is incident-dialog information — the
+    // status lamp/progress bar surface it, not the timeline.
     const events: ManagedTimelineEvent[] = alreadyComplete
       ? incident.timeline
       : [
@@ -831,17 +836,8 @@ export function markReportExported(format: ReportExportFormat): void {
             id: eventId(),
             timestamp: now,
             eventType: "EXPORT",
-            description: `Investigation report exported (${format.toUpperCase()}) — download succeeded`,
+            description: `REPORT EXPORTED (${format.toUpperCase()})`,
             source: "MARIS report engine",
-            severity: "important" as EventSeverity,
-          },
-          {
-            id: eventId(),
-            timestamp: now,
-            eventType: "STATUS",
-            description:
-              "INVESTIGATION COMPLETE — findings compiled. REQUIRES VALIDATION",
-            source: "MARIS Incident Command",
             severity: "important" as EventSeverity,
           },
         ];

@@ -1,10 +1,9 @@
 // MARIS — Incident Command panel.
 //
-// Two views driven entirely by the centralized incident store:
-//  1. IncidentCommandStrip — compact command header for the active
-//     incident (status lamp, last-updated, location, area, volume,
-//     confidence, REQUIRES VALIDATION flag).
-//  2. IncidentTimelineView — full event history with real timestamps.
+// IncidentCommandStrip — the incident dialog/card for the active
+// incident (status lamp, last-updated, location, area, volume,
+// confidence, REQUIRES VALIDATION flag). This is where the live
+// incident status belongs — NOT in the Analysis Chronology.
 //
 // Every displayed value comes from the ManagedIncident record. No fake
 // KPI numbers. Wording guardrails: POSSIBLE OIL SLICK / UNVERIFIED /
@@ -14,7 +13,6 @@ import {
   Clock,
   Crosshair,
   Droplets,
-  History,
   ScanEye,
   Waves,
 } from "lucide-react";
@@ -23,7 +21,6 @@ import {
   STATUS_LABELS,
   setActiveIncident,
   type ManagedIncident,
-  type ManagedTimelineEvent,
 } from "@/data/incidentStore";
 
 // ─── STATUS LAMP ─────────────────────────────────────────────────────
@@ -211,101 +208,6 @@ function Vital({
         {value}
       </div>
     </div>
-  );
-}
-
-// ─── TIMELINE VIEW ───────────────────────────────────────────────────
-
-const SEVERITY_COLOR: Record<string, string> = {
-  info: "bg-zinc-600",
-  important: "bg-sky-400",
-  critical: "bg-orange-500",
-};
-
-export function IncidentTimelineView({
-  incident,
-  className,
-}: {
-  incident: ManagedIncident | null;
-  className?: string;
-}) {
-  if (!incident) {
-    return (
-      <div className="flex items-center gap-2 px-3 py-2 text-[10px] text-zinc-600">
-        <History className="size-3" />
-        No incident timeline
-      </div>
-    );
-  }
-
-  const events = [...incident.timeline].sort(
-    (a, b) => b.timestamp.localeCompare(a.timestamp),
-  );
-
-  return (
-    <div className={cn("rounded border border-sky-200/10 bg-[#070d16]/95", className)}>
-      <div className="flex items-center justify-between border-b border-sky-200/10 px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <History className="size-3 text-sky-300" />
-          <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
-            Incident Timeline
-          </span>
-        </div>
-        <span className="font-mono text-[8px] text-zinc-600">
-          {incident.incidentNumber} · {events.length} events
-        </span>
-      </div>
-      <div className="max-h-72 overflow-y-auto p-2">
-        <ol className="relative space-y-0">
-          {events.map((e, idx) => (
-            <TimelineRow
-              key={e.id}
-              event={e}
-              isLast={idx === events.length - 1}
-            />
-          ))}
-        </ol>
-      </div>
-    </div>
-  );
-}
-
-function TimelineRow({
-  event,
-  isLast,
-}: {
-  event: ManagedTimelineEvent;
-  isLast: boolean;
-}) {
-  return (
-    <li className="relative flex gap-2.5 pb-2.5 last:pb-0">
-      {/* Connector */}
-      {!isLast && (
-        <div className="absolute left-[3px] top-2.5 h-full w-px bg-sky-200/10" />
-      )}
-      <span
-        className={cn(
-          "relative mt-1.5 size-[7px] shrink-0 rounded-full",
-          SEVERITY_COLOR[event.severity] ?? "bg-zinc-600",
-        )}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-[9px] font-semibold text-zinc-300">
-            {fmtUtc(event.timestamp)}
-          </span>
-          <span className="text-[8px] font-semibold uppercase tracking-wider text-zinc-600">
-            {event.eventType}
-          </span>
-          <span className="ml-auto hidden text-[8px] text-zinc-700 sm:block">
-            {event.source}
-          </span>
-        </div>
-        <div className="mt-0.5 text-[10px] leading-snug text-zinc-400">
-          {event.description}
-        </div>
-      </div>
-    </li>
   );
 }
 
