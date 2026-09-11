@@ -17,7 +17,7 @@ import { useIncidentPersistence, useIncidentHydration } from "@/hooks/useInciden
 import {
   completeStage,
   deriveEstimatedVolumeM3,
-  markReportGenerated,
+  markReportExported,
   recordIncidentUpdate,
   startInvestigation,
   failStage,
@@ -308,7 +308,9 @@ export default function Dashboard() {
       };
       const doc = generatePdfReport(reportData);
       doc.save(`MARIS-Incident-${state.incident.incidentNumber || "report"}.pdf`);
-      markReportGenerated(); // success → final workflow state + timeline
+      // Prompt-10 FINAL GATE: the browser accepted the download — only now
+      // does the investigation complete (100%, INVESTIGATION COMPLETE).
+      markReportExported("pdf");
     } catch (err) {
       handleFatalPipelineError(err);
       throw err;
@@ -336,7 +338,9 @@ export default function Dashboard() {
       a.download = `MARIS-${state.incident.incidentNumber || "report"}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      markReportGenerated(); // success → final workflow state + timeline
+      // Prompt-10 FINAL GATE: the browser accepted the download — only now
+      // does the investigation complete (100%, INVESTIGATION COMPLETE).
+      markReportExported("json");
     } catch (err) {
       handleFatalPipelineError(err);
       throw err;
@@ -397,6 +401,8 @@ export default function Dashboard() {
               <IncidentStatusBar
                 incident={activeManagedIncident}
                 isAnalyzing={state.isAnalyzing}
+                onDownloadPdf={handleDownloadPdf}
+                onDownloadJson={handleDownloadJson}
               />
             </div>
           )}

@@ -8,7 +8,10 @@
 import {
   CircleDashed,
   Compass,
+  Download,
   FileCheck2,
+  FileJson,
+  FileText,
   Loader2,
   Play,
   RotateCcw,
@@ -20,6 +23,7 @@ import {
   STATUS_LABELS,
   startInvestigation,
   resetInvestigation,
+  investigationComplete,
   workflowProgressPct,
   type InvestigationStageId,
   type InvestigationWorkflow,
@@ -32,9 +36,13 @@ import {
 export function IncidentStatusBar({
   incident,
   isAnalyzing,
+  onDownloadPdf,
+  onDownloadJson,
 }: {
   incident: ManagedIncident | null;
   isAnalyzing?: boolean;
+  onDownloadPdf?: () => void;
+  onDownloadJson?: () => void;
 }) {
   if (!incident) return null;
 
@@ -42,7 +50,8 @@ export function IncidentStatusBar({
   const pct = workflowProgressPct(wf);
   const running = wf.runningStage;
   const stage = INVESTIGATION_STAGES.find((s) => s.id === running) ?? null;
-  const complete = wf.reportGenerated;
+  const complete = investigationComplete(wf);
+  const ready = wf.reportGenerated && !complete;
 
   return (
     <div className="pointer-events-auto rounded border border-sky-200/10 bg-[#070d16]/95 shadow-lg shadow-black/40 backdrop-blur-sm">
@@ -82,15 +91,22 @@ export function IncidentStatusBar({
         <div className="mt-1 flex items-center justify-between text-[8px]">
           <span className="text-zinc-500">
             {complete
-              ? "REPORT GENERATED"
-              : running
-                ? `CURRENT STEP — ${stage?.label ?? ""}`
-                : "PIPELINE IDLE"}
+              ? "INVESTIGATION COMPLETE"
+              : ready
+                ? "REPORT READY — EXPORT REQUIRED"
+                : running
+                  ? `CURRENT STEP — ${stage?.label ?? ""}`
+                  : "PIPELINE IDLE"}
           </span>
           {complete ? (
             <span className="flex items-center gap-1 text-emerald-400/90">
               <FileCheck2 className="size-2.5" />
               Requires validation
+            </span>
+          ) : ready ? (
+            <span className="flex items-center gap-1 text-orange-400/90">
+              <Download className="size-2.5" />
+              Export to complete
             </span>
           ) : (
             <span className="text-zinc-600">
@@ -103,6 +119,22 @@ export function IncidentStatusBar({
       {/* Row 3: actions */}
       <div className="flex items-center gap-1.5 border-t border-sky-200/10 px-2.5 py-1.5">
         <RunButton incident={incident} isAnalyzing={isAnalyzing} />
+        {ready && (
+          <>
+            <ExportButton
+              label="PDF"
+              icon={<FileText className="size-2.5" />}
+              exported={wf.pdfExportedAt !== null}
+              onClick={onDownloadPdf}
+            />
+            <ExportButton
+              label="JSON"
+              icon={<FileJson className="size-2.5" />}
+              exported={wf.jsonExportedAt !== null}
+              onClick={onDownloadJson}
+            />
+          </>
+        )}
         {complete && (
           <button
             onClick={resetInvestigation}
@@ -124,6 +156,35 @@ export function IncidentStatusBar({
   );
 }
 
+function ExportButton({
+  label,
+  icon,
+  exported,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  exported: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={exported}
+      className={cn(
+        "flex items-center gap-1 rounded border px-2 py-1 text-[9px] font-semibold transition-colors",
+        exported
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+          : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:border-sky-400/70 hover:bg-sky-400/20",
+      )}
+      title={exported ? `${label} exported` : `Download ${label} report`}
+    >
+      {exported ? <FileCheck2 className="size-2.5" /> : icon}
+      {exported ? `${label} Exported` : `Download ${label}`}
+    </button>
+  );
+}
+
 function StatusLamp({
   status,
   analyzing,
@@ -133,9 +194,9 @@ function StatusLamp({
 }) {
   const color = analyzing
     ? "bg-sky-400"
-    : status === "requires_validation"
+    : status === "investigation_complete" || status === "requires_validation"
       ? "bg-emerald-400"
-      : status === "report_ready"
+      : status === "report_ready" || status === "report_exported"
         ? "bg-teal-400"
         : status === "unverified" || status === "detected"
           ? "bg-amber-400"
@@ -163,13 +224,24 @@ function RunButton({
 }) {
   const wf = incident.workflow;
   const busy = !!wf.runningStage || !!isAnalyzing;
-  const complete = wf.reportGenerated;
+  const complete = investigationComplete(wf);
 
   if (complete) {
     return (
       <span className="flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[9px] font-semibold text-emerald-400">
         <FileCheck2 className="size-3" />
         Investigation Complete
+      </span>
+    );
+  }
+
+  if (wf.reportGenerated) {
+    // Report READY but not exported — the pipeline has nothing left to run;
+    // completion now requires the operator's export action, not a re-run.
+    return (
+      <span className="flex items-center gap-1.5 rounded border border-teal-500/40 bg-teal-500/10 px-2.5 py-1 text-[9px] font-semibold text-teal-300">
+        <Download className="size-3" />
+        Report Ready
       </span>
     );
   }
@@ -222,6 +294,7 @@ export function InvestigationProgressPanel({
 
   const wf = incident.workflow;
   const pct = workflowProgressPct(wf);
+  const complete = investigationComplete(wf);
 
   return (
     <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
@@ -259,11 +332,34 @@ export function InvestigationProgressPanel({
         })}
       </div>
 
-      {wf.reportGenerated && (
+      {wf.reportGenerated && !complete && (
+        <div className="mt-3 rounded border border-orange-500/30 bg-orange-500/5 p-2">
+          <div className="flex items-center gap-1.5 text-[9px] font-semibold text-orange-400">
+            <Download className="size-3" />
+            Report ready — export required
+          </div>
+          <div className="mt-1 text-[8px] leading-snug text-zinc-500">
+            Investigation analysis complete. Export the investigation report
+            to complete the workflow.
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <ExportStateBadge
+              label="PDF"
+              state={exportState("pdf", wf)}
+            />
+            <ExportStateBadge
+              label="JSON"
+              state={exportState("json", wf)}
+            />
+          </div>
+        </div>
+      )}
+
+      {complete && (
         <div className="mt-3 rounded border border-emerald-500/30 bg-emerald-500/5 p-2">
           <div className="flex items-center gap-1.5 text-[9px] font-semibold text-emerald-400">
             <FileCheck2 className="size-3" />
-            Report generated{" "}
+            Investigation complete{" "}
             {wf.reportExportedAt && (
               <span className="font-mono text-zinc-500">
                 {new Date(wf.reportExportedAt).toLocaleTimeString("en-GB", {
@@ -276,8 +372,18 @@ export function InvestigationProgressPanel({
             )}
           </div>
           <div className="mt-1 text-[8px] leading-snug text-zinc-500">
-            MARIS prototype analysis complete. Not a confirmation of spill
-            origin — findings require human validation.
+            Report exported — MARIS prototype analysis compiled. Not a
+            confirmation of spill origin — findings require human validation.
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <ExportStateBadge
+              label="PDF"
+              state={exportState("pdf", wf)}
+            />
+            <ExportStateBadge
+              label="JSON"
+              state={exportState("json", wf)}
+            />
           </div>
         </div>
       )}
@@ -293,6 +399,48 @@ export function InvestigationProgressPanel({
       )}
     </div>
   );
+}
+
+function ExportStateBadge({
+  label,
+  state,
+}: {
+  label: string;
+  state: "exported" | "ready" | "none";
+}) {
+  const styles =
+    state === "exported"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+      : state === "ready"
+        ? "border-sky-400/40 bg-sky-400/10 text-sky-300"
+        : "border-zinc-700 bg-zinc-900 text-zinc-500";
+  const text =
+    state === "exported" ? "EXPORTED" : state === "ready" ? "READY" : "NOT EXPORTED";
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-semibold tracking-wider",
+        styles,
+      )}
+    >
+      {label}
+      {state === "exported" ? (
+        <FileCheck2 className="size-2" />
+      ) : state === "ready" ? (
+        <CircleDashed className="size-2" />
+      ) : null}
+      {text}
+    </span>
+  );
+}
+
+function exportState(
+  format: "pdf" | "json",
+  wf: InvestigationWorkflow,
+): "exported" | "ready" | "none" {
+  const at = format === "pdf" ? wf.pdfExportedAt : wf.jsonExportedAt;
+  if (at) return "exported";
+  return wf.reportGenerated ? "ready" : "none";
 }
 
 function StageRow({

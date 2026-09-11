@@ -26,6 +26,9 @@ function signature(i: ManagedIncident): string {
     i.workflow.runningStage,
     i.workflow.completedStages.length,
     i.workflow.reportGenerated,
+    i.workflow.pdfExportedAt,
+    i.workflow.jsonExportedAt,
+    i.workflow.reportExportedAt,
   ]);
 }
 
@@ -54,6 +57,8 @@ export function useIncidentPersistence(incident: ManagedIncident | null): void {
             runningStage: incident.workflow.runningStage ?? undefined,
             completedStages: incident.workflow.completedStages,
             reportGenerated: incident.workflow.reportGenerated,
+            pdfExportedAt: incident.workflow.pdfExportedAt ?? undefined,
+            jsonExportedAt: incident.workflow.jsonExportedAt ?? undefined,
             reportExportedAt: incident.workflow.reportExportedAt ?? undefined,
             lastError: incident.workflow.lastError ?? undefined,
           },

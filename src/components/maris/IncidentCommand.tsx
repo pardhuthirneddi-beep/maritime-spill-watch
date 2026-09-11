@@ -35,6 +35,10 @@ const STATUS_COLORS: Record<string, string> = {
   evidence_updated: "bg-violet-400",
   candidates_ranked: "bg-cyan-400",
   impact_assessment: "bg-teal-400",
+  report_generating: "bg-indigo-400",
+  report_ready: "bg-teal-300",
+  report_exported: "bg-emerald-400",
+  investigation_complete: "bg-emerald-500",
   requires_validation: "bg-orange-500",
 };
 

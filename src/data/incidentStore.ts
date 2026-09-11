@@ -39,7 +39,10 @@ export type IncidentStatus =
   | "evidence_updated"
   | "candidates_ranked"
   | "impact_assessment"
+  | "report_generating"
   | "report_ready"
+  | "report_exported"
+  | "investigation_complete"
   | "requires_validation";
 
 export const STATUS_LABELS: Record<IncidentStatus, string> = {
@@ -49,7 +52,10 @@ export const STATUS_LABELS: Record<IncidentStatus, string> = {
   evidence_updated: "EVIDENCE UPDATED",
   candidates_ranked: "SOURCE CANDIDATES RANKED",
   impact_assessment: "ANALYSIS IN PROGRESS",
+  report_generating: "REPORT GENERATING",
   report_ready: "REPORT READY",
+  report_exported: "REPORT EXPORTED",
+  investigation_complete: "INVESTIGATION COMPLETE",
   requires_validation: "REQUIRES VALIDATION",
 };
 
@@ -90,24 +96,50 @@ export interface InvestigationWorkflow {
   runningStage: InvestigationStageId | null;
   /** Stages that have completed, in order. */
   completedStages: InvestigationStageId[];
-  /** Whether the report artifact was successfully generated + exported. */
+  /** Whether the report artifact was successfully generated (stage done). */
   reportGenerated: boolean;
+  /** Prompt-10: export is the FINAL gate — per-format timestamps set only
+   * after the browser confirms the download actually happened. */
+  pdfExportedAt: string | null;
+  jsonExportedAt: string | null;
+  /** First successful export (legacy field, kept for persistence compat). */
   reportExportedAt: string | null;
   /** Human error note when a stage fails (never silently swallowed). */
   lastError: string | null;
 }
 
-/** Percentage of the pipeline completed — derived from ACTUAL stage state,
- * never a decorative animation. Detection complete ⇒ 1/7 ≈ 14%, etc. */
+/**
+ * Percentage of the pipeline completed — derived from ACTUAL stage state,
+ * never a decorative animation. Report-READY is deliberately capped BELOW
+ * 100% (92%): the export/download is the final gate (Prompt 10). Only a
+ * successful PDF or JSON export completes the workflow at 100%.
+ */
+const REPORT_READY_CAP_PCT = 92;
+
 export function workflowProgressPct(wf: InvestigationWorkflow): number {
+  if (investigationComplete(wf)) return 100;
   const done = wf.completedStages.length;
   const running = wf.runningStage ? 1 : 0;
-  return Math.round(((done + 0.5 * running) / INVESTIGATION_STAGES.length) * 100);
+  const raw = Math.round(((done + 0.5 * running) / INVESTIGATION_STAGES.length) * 100);
+  // REPORT READY (all stages done, nothing exported) must NOT read 100%.
+  if (wf.reportGenerated) return Math.max(raw, REPORT_READY_CAP_PCT);
+  return Math.min(raw, REPORT_READY_CAP_PCT);
+}
+
+/** Whether the workflow has truly finished — i.e. an actual successful
+ * report export/download has been recorded. Rendering/opening the report
+ * NEVER satisfies this gate. */
+export function investigationComplete(wf: InvestigationWorkflow): boolean {
+  return wf.reportExportedAt !== null;
 }
 
 /** The status implied by the workflow's actual position in the pipeline. */
 export function workflowStatus(wf: InvestigationWorkflow): IncidentStatus {
+  // Export is the final gate — first successful download completes the
+  // investigation (the product design requires one export, PDF or JSON).
+  if (investigationComplete(wf)) return "investigation_complete";
   if (wf.lastError && !wf.runningStage) return "under_investigation";
+  if (wf.runningStage === "report") return "report_generating";
   if (wf.runningStage) {
     // Quantification and beyond = evidence actively being assembled.
     const idx = INVESTIGATION_STAGES.findIndex((s) => s.id === wf.runningStage);
@@ -115,7 +147,7 @@ export function workflowStatus(wf: InvestigationWorkflow): IncidentStatus {
   }
   const done = new Set(wf.completedStages);
   if (done.size === INVESTIGATION_STAGES.length) {
-    return wf.reportGenerated ? "requires_validation" : "report_ready";
+    return "report_ready"; // generated but NOT exported → still actionable
   }
   if (done.has("evidence_fusion")) return "impact_assessment";
   if (done.has("ais_correlation")) return "candidates_ranked";
@@ -192,6 +224,8 @@ const IDLE_WORKFLOW: InvestigationWorkflow = {
   runningStage: null,
   completedStages: [],
   reportGenerated: false,
+  pdfExportedAt: null,
+  jsonExportedAt: null,
   reportExportedAt: null,
   lastError: null,
 };
@@ -708,11 +742,11 @@ export function failStage(stageId: InvestigationStageId, error: string): void {
 }
 
 /**
- * Record a SUCCESSFULLY generated report. Per Prompt-8 §9 the incident
- * reaches its final state only after generation/export succeeds — call
- * this AFTER the artifact is written, not when the report page opens.
+ * Report stage finished — the artifact is generated and READY for the
+ * operator. This is NOT completion: progress caps at 92% and the status
+ * shows REPORT READY until the user actually exports the report.
  */
-export function markReportGenerated(): void {
+export function markReportReady(): void {
   mutate((s) => {
     const incident = findActive(s);
     if (!incident) return s;
@@ -724,9 +758,8 @@ export function markReportGenerated(): void {
       runningStage: null,
       completedStages: INVESTIGATION_STAGES.map((st) => st.id),
       reportGenerated: true,
-      reportExportedAt: now,
     };
-    const updated = withWorkflow({ ...incident }, wf, "requires_validation");
+    const updated = withWorkflow({ ...incident }, wf, "report_ready");
 
     const events: ManagedTimelineEvent[] = [
       ...incident.timeline,
@@ -734,17 +767,9 @@ export function markReportGenerated(): void {
         id: eventId(),
         timestamp: now,
         eventType: "REPORT",
-        description: "Investigation report generated",
-        source: "MARIS report engine",
-        severity: "important" as EventSeverity,
-      },
-      {
-        id: eventId(),
-        timestamp: now,
-        eventType: "STATUS",
         description:
-          "Investigation complete — evidence compiled. REQUIRES VALIDATION",
-        source: "MARIS Incident Command",
+          "Investigation report generated — REPORT READY. Export required to complete the investigation.",
+        source: "MARIS report engine",
         severity: "important" as EventSeverity,
       },
     ];
@@ -759,8 +784,82 @@ export function markReportGenerated(): void {
         incident,
         "status_changed",
         "REPORT READY",
-        `Investigation report generated — ${incident.incidentNumber} · REQUIRES VALIDATION`,
+        `Investigation analysis complete — export required · ${incident.incidentNumber}`,
       ),
+    };
+  });
+}
+
+/**
+ * THE FINAL GATE (Prompt 10): record a SUCCESSFUL report export/download.
+ * Only the actual download handlers call this — never page opens, previews
+ * or timers. First successful export (PDF or JSON, per the existing
+ * product design) completes the investigation at 100%.
+ */
+export type ReportExportFormat = "pdf" | "json";
+
+export function markReportExported(format: ReportExportFormat): void {
+  mutate((s) => {
+    const incident = findActive(s);
+    if (!incident) return s;
+
+    const now = new Date().toISOString();
+    const alreadyComplete = investigationComplete(incident.workflow);
+    if (alreadyComplete) return s;
+
+    const wf: InvestigationWorkflow = {
+      ...incident.workflow,
+      runningStage: null,
+      completedStages: INVESTIGATION_STAGES.map((st) => st.id),
+      reportGenerated: true,
+      ...(format === "pdf"
+        ? { pdfExportedAt: now }
+        : { jsonExportedAt: now }),
+      reportExportedAt: now,
+    };
+    const updated = withWorkflow(
+      { ...incident },
+      wf,
+      "investigation_complete",
+    );
+
+    const events: ManagedTimelineEvent[] = alreadyComplete
+      ? incident.timeline
+      : [
+          ...incident.timeline,
+          {
+            id: eventId(),
+            timestamp: now,
+            eventType: "EXPORT",
+            description: `Investigation report exported (${format.toUpperCase()}) — download succeeded`,
+            source: "MARIS report engine",
+            severity: "important" as EventSeverity,
+          },
+          {
+            id: eventId(),
+            timestamp: now,
+            eventType: "STATUS",
+            description:
+              "INVESTIGATION COMPLETE — findings compiled. REQUIRES VALIDATION",
+            source: "MARIS Incident Command",
+            severity: "important" as EventSeverity,
+          },
+        ];
+
+    return {
+      ...s,
+      incidents: s.incidents.map((i) =>
+        i.id === incident.id ? { ...updated, timeline: events } : i,
+      ),
+      notifications: alreadyComplete
+        ? s.notifications
+        : pushNotification(
+            s,
+            incident,
+            "status_changed",
+            "INVESTIGATION COMPLETE",
+            `Report exported (${format.toUpperCase()}) — ${incident.incidentNumber} · REQUIRES VALIDATION`,
+          ),
     };
   });
 }
@@ -793,6 +892,8 @@ export interface PersistedIncidentSnapshot {
     runningStage?: string;
     completedStages: string[];
     reportGenerated: boolean;
+    pdfExportedAt?: string;
+    jsonExportedAt?: string;
     reportExportedAt?: string;
     lastError?: string;
   } | null;
@@ -813,13 +914,15 @@ export function hydrateFromPersisted(row: PersistedIncidentSnapshot): void {
         INVESTIGATION_STAGES.some((st) => st.id === id),
       ),
       reportGenerated: row.workflow?.reportGenerated ?? false,
+      pdfExportedAt: row.workflow?.pdfExportedAt ?? row.workflow?.reportExportedAt ?? null,
+      jsonExportedAt: row.workflow?.jsonExportedAt ?? null,
       reportExportedAt: row.workflow?.reportExportedAt ?? null,
       lastError: row.workflow?.lastError ?? null,
     };
     if (wf.completedStages.length === 0) return s; // nothing meaningful to resume
 
-    const status = wf.reportGenerated
-      ? ("requires_validation" as IncidentStatus)
+    const status = investigationComplete(wf)
+      ? ("investigation_complete" as IncidentStatus)
       : workflowStatus(wf);
     const updated: ManagedIncident = {
       ...incident,
@@ -852,7 +955,13 @@ export function resetInvestigation(): void {
     const incident = findActive(s);
     if (!incident) return s;
     const wf = initialWorkflow();
-    const updated = withWorkflow({ ...incident }, wf, "unverified");
+    const resetWf: InvestigationWorkflow = {
+      ...wf,
+      pdfExportedAt: null,
+      jsonExportedAt: null,
+      reportExportedAt: null,
+    };
+    const updated = withWorkflow({ ...incident }, resetWf, "unverified");
     return {
       ...s,
       incidents: s.incidents.map((i) => (i.id === incident.id ? updated : i)),

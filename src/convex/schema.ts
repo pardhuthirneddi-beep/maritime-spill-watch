@@ -47,6 +47,10 @@ const schema = defineSchema(
           runningStage: v.optional(v.string()),
           completedStages: v.array(v.string()),
           reportGenerated: v.boolean(),
+          // Prompt-10: export is the final investigation gate — per-format
+          // download timestamps recorded by the actual export handlers.
+          pdfExportedAt: v.optional(v.string()),
+          jsonExportedAt: v.optional(v.string()),
           reportExportedAt: v.optional(v.string()),
           lastError: v.optional(v.string()),
         }),
