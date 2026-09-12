@@ -43,7 +43,10 @@ class ToolbarErrorBoundary extends React.Component<
   }
 }
 
-/** Hard guard so runtime errors never leave the preview as a blank page. */
+/** Hard guard so runtime errors never leave the preview as a blank page.
+ * The boundary RESETS when the route changes — a transient crash inside a
+ * heavy 3D/Cesium view must not leave the whole app stuck on a permanent
+ * "Application Error" screen; navigating away gives it a clean restart. */
 class RootErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; message: string; stack: string }
@@ -58,6 +61,13 @@ class RootErrorBoundary extends React.Component<
   }
   componentDidCatch(err: Error) {
     console.error("[WebContainer preview] Root crash:", err);
+  }
+  componentDidUpdate(prev: { children: React.ReactNode }) {
+    // Route change (new children identity from the Routes switch) clears
+    // the crashed state so the app recovers instead of bricking.
+    if (this.state.hasError && prev.children !== this.props.children) {
+      this.setState({ hasError: false, message: "", stack: "" });
+    }
   }
   render() {
     if (this.state.hasError) {
@@ -75,6 +85,12 @@ class RootErrorBoundary extends React.Component<
                 {this.state.stack}
               </pre>
             )}
+            <button
+              onClick={() => window.location.assign("/app")}
+              className="mt-4 rounded border border-zinc-700 px-3 py-1.5 text-[11px] text-zinc-300 hover:border-zinc-500"
+            >
+              Return to MARIS Command Center
+            </button>
           </div>
         </div>
       );

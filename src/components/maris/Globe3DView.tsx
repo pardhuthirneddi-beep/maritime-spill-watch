@@ -340,9 +340,31 @@ export default function Globe3DView({
     setReady(true);
 
     return () => {
-      handler.destroy();
-      disposeStarfield(viewer.scene);
-      viewer.destroy();
+      // Teardown order matters: stop scene event consumers first, then
+      // release layer resources, then destroy the GL context. Every step
+      // is individually guarded — a throw here must never propagate into
+      // React's unmount (it would trip the root error boundary).
+      try {
+        handler.destroy();
+      } catch (err) {
+        console.warn("[MARIS] pick-handler teardown:", err);
+      }
+      try {
+        // Traffic/evidence layers first — while the scene is still alive.
+        destroyTrafficLayer(viewer.scene);
+      } catch (err) {
+        console.warn("[MARIS] traffic teardown:", err);
+      }
+      try {
+        disposeStarfield(viewer.scene);
+      } catch (err) {
+        console.warn("[MARIS] starfield teardown:", err);
+      }
+      try {
+        viewer.destroy();
+      } catch (err) {
+        console.warn("[MARIS] viewer teardown:", err);
+      }
       viewerRef.current = null;
       staticDsRef.current = null;
       dynamicDsRef.current = null;

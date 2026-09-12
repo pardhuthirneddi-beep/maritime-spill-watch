@@ -91,25 +91,37 @@ function buildShell(
   return collection;
 }
 
+/** The shells installed for the current viewer — disposed on teardown.
+ * Tracked explicitly so dispose removes ONLY our own collections (never a
+ * foreign PointPrimitiveCollection) and never double-removes. */
+let installedShells: Cesium.PointPrimitiveCollection[] = [];
+
 /**
  * Install the deep-space environment. Called once at viewer creation.
  * Returns nothing — the collections live for the viewer's lifetime.
  */
 export function installStarfield(scene: Cesium.Scene): void {
   const rand = mulberry32(0x4d41524953); // "MARIS" — fixed demo universe
+  installedShells = [];
   for (let s = 0; s < SHELL_RADII.length; s++) {
-    buildShell(scene, SHELL_RADII[s], STARS_PER_SHELL[s], rand, 1 - s * 0.22);
+    installedShells.push(
+      buildShell(scene, SHELL_RADII[s], STARS_PER_SHELL[s], rand, 1 - s * 0.22),
+    );
   }
 }
 
 /**
- * Dispose the procedural shells (viewer teardown).
+ * Dispose the procedural shells (viewer teardown). Guards per shell: if
+ * the owning viewer's context was already destroyed mid-teardown, the
+ * remaining cleanup continues instead of throwing during unmount.
  */
 export function disposeStarfield(scene: Cesium.Scene): void {
-  for (let i = scene.primitives.length - 1; i >= 0; i--) {
-    const p = scene.primitives.get(i);
-    if (p instanceof Cesium.PointPrimitiveCollection) {
+  for (const p of installedShells) {
+    try {
       scene.primitives.remove(p);
+    } catch {
+      // Context already torn down — nothing left to release for this shell.
     }
   }
+  installedShells = [];
 }

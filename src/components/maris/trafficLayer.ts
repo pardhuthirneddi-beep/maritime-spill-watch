@@ -202,16 +202,21 @@ export function createTrafficLayer(scene: Cesium.Scene): void {
   slots.forEach((slot, i) => pickMap.set(slot.symbol, fleet[i].mmsi));
 }
 
-/** Remove the traffic layer (viewer teardown). Safe on a dead scene. */
+/** Remove the traffic layer (viewer teardown). Always clears module state
+ * so a later mount rebuilds cleanly — even when the owning viewer was
+ * already destroyed (React cleanup order can destroy the viewer before
+ * this runs; the primitives are then already gone with its context). */
 export function destroyTrafficLayer(scene: Cesium.Scene): void {
-  if (!handles) return;
-  try {
-    scene.primitives.remove(handles.symbols);
-    scene.primitives.remove(handles.brackets);
-    scene.primitives.remove(handles.labels);
-    scene.primitives.remove(handles.trails);
-  } catch {
-    // Viewer already torn down — nothing to release.
+  if (handles) {
+    try {
+      scene.primitives.remove(handles.symbols);
+      scene.primitives.remove(handles.brackets);
+      scene.primitives.remove(handles.labels);
+      scene.primitives.remove(handles.trails);
+    } catch (err) {
+      // Owner context already torn down mid-frame — primitives are gone.
+      console.warn("[MARIS] traffic layer teardown after viewer destroy:", err);
+    }
   }
   handles = null;
   pickMap.clear();
