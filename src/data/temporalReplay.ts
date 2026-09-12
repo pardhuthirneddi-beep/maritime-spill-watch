@@ -24,7 +24,12 @@ export function replayEndMs(vessels: AisVessel[]): number {
   return lastFix;
 }
 
-function positionAt(v: AisVessel, tMs: number): TemporalPosition {
+/**
+ * A vessel's interpolated position at an instant of the replay clock.
+ * Exported so the 3D view can drive per-frame rendering from the same
+ * pure function the replay engine uses (one trajectory, one truth).
+ */
+export function positionAt(v: AisVessel, tMs: number): TemporalPosition {
   const ts = v.timestamps.map((s) => Date.parse(s));
   const traj = v.trajectory;
 

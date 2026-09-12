@@ -283,7 +283,10 @@ export function updateTrafficLayer(
     // ── SYMBOL ──────────────────────────────────────────────────────
     slot.symbol.show = true;
     toCartesian(p.lat, p.lon, 80, scratchPos);
-    slot.symbol.position = Cesium.Cartesian3.clone(scratchPos, slot.symbol.position);
+    // FRESH instance every assignment — cloning INTO the existing position
+    // mutates it in place, so Cesium's dirty check (reference compare) never
+    // fires and the billboard's GPU position never updates (frozen symbol).
+    slot.symbol.position = Cesium.Cartesian3.clone(scratchPos);
     slot.symbol.rotation = Cesium.Math.toRadians(-p.headingDeg);
     slot.symbol.scale = sel ? 0.44 : 0.3;
     // Only touch billboard.image when the sprite actually changes — Cesium

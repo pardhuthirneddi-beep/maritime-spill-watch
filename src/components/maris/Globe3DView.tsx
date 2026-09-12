@@ -42,6 +42,7 @@ import {
   buildReplayFrame,
   computeCorrelation,
   investigationAreaPolygon,
+  positionAt as replayPositionAt,
   replayEndMs,
   replayStartMs,
 } from "@/data/temporalReplay";
@@ -177,18 +178,20 @@ export default function Globe3DView({
   const staticDsRef = useRef<Cesium.CustomDataSource | null>(null);
   const dynamicDsRef = useRef<Cesium.CustomDataSource | null>(null);
   const areaDsRef = useRef<Cesium.CustomDataSource | null>(null);
+  // Evidence-event entities (globe_grid layer) with their reveal times —
+  // visibility is driven per frame from the sim clock (see preRender).
+  const evidenceEntsRef = useRef<Array<{ ent: Cesium.Entity; tMs: number }>>([]);
   const onSelectRef = useRef(onVesselSelect);
   onSelectRef.current = onVesselSelect;
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<SceneSelection>(null);
-  const [replayMs, setReplayMs] = useState<number | null>(null);
-  // Replay running state — the clock itself always runs (traffic must keep
-  // moving); `playing` only marks whether the replay playhead is advancing
-  // through the evidence window for the timeline UI.
-  const [playing, setPlaying] = useState(false);
-  const [replayState, setReplayState] = useState<number | null>(null);
+  // Replay running state. The replay AUTO-PLAYS on mount (the clock runs
+  // from the window start) so the 5 investigation vessels visibly travel
+  // without requiring the user to press Play; Pause freezes the clock —
+  // the single pause switch for fleet + candidates + playhead.
+  const [playing, setPlaying] = useState(true);
   // Centralized simulation clock: 1× = real-time (1 sim-ms per real-ms).
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   // Clock UI mirror (5 Hz flush from the rAF loop below); null until the
@@ -558,6 +561,9 @@ export default function Globe3DView({
     const ds = dynamicDsRef.current;
     if (!ds || !incident || !ready) return;
     ds.entities.removeAll();
+    // This effect owns the evidence-event entities — the preRender list is
+    // rebuilt (or cleared on layer-off) with it, never stale.
+    evidenceEntsRef.current = [];
 
     if (isLayerOn("globe_tracks")) {
       for (const v of vessels) {
@@ -584,8 +590,16 @@ export default function Globe3DView({
       const laneUse = new Map<string, number>();
 
       for (const v of vessels) {
-        const pos = frame.positions[v.mmsi];
-        if (!pos) continue;
+        // Per-frame live position from the shared sim clock (read through
+        // the ref — NOT the 5 Hz React state) via the SAME pure trajectory
+        // function the replay engine uses. Symbol, brackets and label all
+        // consume this ONE position property, so they move together every
+        // frame and respond to scrubbing without entity rebuilds.
+        const simPosition = new Cesium.CallbackPositionProperty(() => {
+          const pos = replayPositionAt(v, simMsRef.current);
+          return Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80);
+        }, false);
+
         const sel = selectedVesselMmsi === v.mmsi;
 
         // Vessel state from the EXISTING systems only:
@@ -599,18 +613,26 @@ export default function Globe3DView({
             ? "CANDIDATE"
             : "NORMAL";
         const cls = classifyVessel(v.vesselType);
-        const headingDeg = resolveHeadingDeg(pos.headingDeg, v.heading);
 
         // ═─ SHIP SYMBOL (top-down silhouette, heading-rotated) ─────────
         const vesselEnt = ds.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+          position: simPosition,
           billboard: {
             image: getVesselSymbol(cls, state),
             // 64px sprite → ~24px at regional zoom; selected slightly clearer.
             scale: sel ? 0.44 : 0.36,
             // Top-down silhouette: rotation around the view (Z) axis so the
-            // bow points along the vessel's course over ground.
-            rotation: Cesium.Math.toRadians(-headingDeg),
+            // bow points along the vessel's course over ground — live heading.
+            rotation: new Cesium.CallbackProperty(
+              () =>
+                Cesium.Math.toRadians(
+                  -resolveHeadingDeg(
+                    replayPositionAt(v, simMsRef.current).headingDeg,
+                    v.heading,
+                  ),
+                ),
+              false,
+            ),
             alignedAxis: Cesium.Cartesian3.UNIT_Z,
             verticalOrigin: Cesium.VerticalOrigin.CENTER,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -623,7 +645,7 @@ export default function Globe3DView({
         // rectangle). Emphasis scales with state; position follows the
         // vessel through the shared position — never the camera.
         ds.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+          position: simPosition,
           billboard: {
             image: getBracketSprite(state),
             scale: bracketScale(state) * (sel ? 1.15 : 1),
@@ -635,14 +657,16 @@ export default function Globe3DView({
         // ═─ MMSI-FIRST TRACKING LABEL ──────────────────────────────────
         // Technical contact label: MMSI primary, name secondary. Shows at
         // regional zoom so the global view never becomes a wall of text.
-        const cell = `${Math.round(pos.lat * 12)}:${Math.round(pos.lon * 12)}`;
+        // Lane cell derives from the live (moving) position.
+        const laneCellPos = replayPositionAt(v, simMsRef.current);
+        const cell = `${Math.round(laneCellPos.lat * 12)}:${Math.round(laneCellPos.lon * 12)}`;
         const lane = (laneUse.get(cell) ?? 0);
         laneUse.set(cell, lane + 1);
 
         const contact = buildContactLabel(v.mmsi, v.name, state);
         // Primary line — MMSI, state-accented, bold. Always first.
         const evEnt = ds.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+          position: simPosition,
           label: {
             text: contact.primary,
             font: "600 9px 'JetBrains Mono', monospace",
@@ -661,7 +685,7 @@ export default function Globe3DView({
         // Secondary line — vessel name, smaller, beneath the MMSI.
         if (contact.secondary) {
           ds.entities.add({
-            position: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+            position: simPosition,
             label: {
               text: contact.secondary,
               font: "8px 'JetBrains Mono', monospace",
@@ -677,18 +701,25 @@ export default function Globe3DView({
 
         // Course leader line — from the bow along the course over ground.
         // Reinforces heading for the selected vessel only (clarity);
-        // unselected traffic stays clean.
+        // unselected traffic stays clean. Live per-frame endpoints.
         if (sel) {
-          const headingRad = Cesium.Math.toRadians(headingDeg);
-          const distDeg = 0.012;
-          const tipLat = pos.lat + distDeg * Math.cos(headingRad);
-          const tipLon = pos.lon + distDeg * Math.sin(headingRad);
           ds.entities.add({
             polyline: {
-              positions: [
-                Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
-                Cesium.Cartesian3.fromDegrees(tipLon, tipLat, 80),
-              ],
+              positions: new Cesium.CallbackProperty(() => {
+                const pos = replayPositionAt(v, simMsRef.current);
+                const headingRad = Cesium.Math.toRadians(
+                  resolveHeadingDeg(pos.headingDeg, v.heading),
+                );
+                const distDeg = 0.012;
+                return [
+                  Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 80),
+                  Cesium.Cartesian3.fromDegrees(
+                    pos.lon + distDeg * Math.sin(headingRad),
+                    pos.lat + distDeg * Math.cos(headingRad),
+                    80,
+                  ),
+                ];
+              }, false),
               width: 1.2,
               material: COLOR_VESSEL_SEL,
             },
@@ -732,7 +763,9 @@ export default function Globe3DView({
       // Annotation discipline: events clustered in space get vertically
       // stacked callouts (no random scatter); labels only appear at close
       // zoom; the most recent event in the sim clock is emphasized.
-      const ordered = [...frame.visibleEvents].sort(
+      // Entities are created ONCE; per-frame visibility is driven from the
+      // sim clock through evidenceEntsRef (see the preRender listener).
+      const ordered = [...EVIDENCE_EVENTS].sort(
         (a, b) => Date.parse(a.time) - Date.parse(b.time),
       );
       // Cluster events within ~1.3 km of the previous one.
@@ -748,14 +781,15 @@ export default function Globe3DView({
 
         const accent = Cesium.Color.fromCssColorString(EVENT_COLOR[ev.category] ?? "#fbbf24");
         const isLatest = ev.id === ordered[ordered.length - 1]?.id;
-        const isFresh =
-          replayMs !== null && Date.parse(ev.time) >= replayMs - 3 * 60_000;
+        const evTimeMs = Date.parse(ev.time);
 
         const evEnt = ds.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ev.lon, ev.lat, 300),
+          // Initial visibility from the current clock; then per-frame.
+          show: simMsRef.current >= evTimeMs,
           point: {
             pixelSize: isLatest ? 7 : 5,
-            color: accent.withAlpha(isFresh || isLatest ? 1 : 0.8),
+            color: accent.withAlpha(isLatest ? 1 : 0.8),
             outlineColor: Cesium.Color.BLACK.withAlpha(0.55),
             outlineWidth: 1,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -775,14 +809,13 @@ export default function Globe3DView({
           },
         });
         tagEntity(evEnt, "event", ev.id);
+        evidenceEntsRef.current.push({ ent: evEnt, tMs: evTimeMs });
       }
     }
   }, [
     ready,
     incident,
     vessels,
-    frame,
-    replayMs,
     selectedVesselMmsi,
     layers,
     isLayerOn,
@@ -831,7 +864,6 @@ export default function Globe3DView({
   const seekClock = useCallback((ms: number) => {
     simMsRef.current = ms;
     setSimMs(ms);
-    setReplayState(ms);
   }, []);
 
   // ── DEMO AIS TRAFFIC (per-frame, outside React) ────────────────────
@@ -858,7 +890,14 @@ export default function Globe3DView({
       removeListener = viewer.scene.preRender.addEventListener(() => {
         // Guard: the effect that destroys the viewer unmounts before this
         // one, so the scene may already be gone during teardown.
-        if (!trafficOnRef.current || viewer.isDestroyed()) return;
+        if (viewer.isDestroyed()) return;
+        // Evidence events appear as the replay clock passes their timestamp
+        // (7 entities — per-frame show toggle is trivially cheap). Runs
+        // regardless of the traffic layer toggle.
+        for (const { ent, tMs } of evidenceEntsRef.current) {
+          ent.show = simMsRef.current >= tMs;
+        }
+        if (!trafficOnRef.current) return;
         updateTrafficLayer(viewer.scene, simMsRef.current, EPOCH_MS);
       });
     });
@@ -950,8 +989,7 @@ export default function Globe3DView({
   const handleReset = () => {
     setSelection(null);
     onVesselSelect(null);
-    setPlaying(false);
-    setReplayState(null);
+    setPlaying(true); // keep the simulation alive after a reset
     seekClock(startMs); // replay back to the window start
     viewerRef.current?.camera.flyHome(1.6);
   };
