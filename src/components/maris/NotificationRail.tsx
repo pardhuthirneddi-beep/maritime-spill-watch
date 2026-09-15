@@ -31,7 +31,7 @@ const KIND_STYLES: Record<
   IncidentNotification["kind"],
   { color: string; icon: React.ComponentType<{ className?: string }> }
 > = {
-  new_incident: { color: "text-orange-400", icon: Radar },
+  new_incident: { color: "text-amber-400", icon: Radar },
   incident_updated: { color: "text-sky-300", icon: RefreshCw },
   evidence_added: { color: "text-violet-300", icon: Target },
   candidates_ranked: { color: "text-cyan-300", icon: Target },
@@ -58,7 +58,7 @@ export default function NotificationRail({
         >
           <Radar
             className={cn(
-              "size-3 text-orange-400",
+              "size-3 text-amber-400",
               unread > 0 && "animate-pulse",
             )}
           />
@@ -66,7 +66,7 @@ export default function NotificationRail({
             Operational Alerts
           </span>
           {unread > 0 && (
-            <span className="rounded bg-orange-500/20 px-1 text-[8px] font-bold text-orange-300">
+            <span className="rounded bg-amber-500/20 px-1 text-[8px] font-bold text-amber-300">
               {unread}
             </span>
           )}
@@ -89,9 +89,9 @@ export default function NotificationRail({
                     className={cn(
                       "group rounded border px-2 py-1.5 transition-colors",
                       n.incidentId === activeIncidentId
-                        ? "border-orange-500/30 bg-orange-500/5"
+                        ? "border-amber-500/30 bg-amber-500/5"
                         : "border-sky-200/10 bg-zinc-900/40",
-                      !n.read && "border-l-2 border-l-orange-400/70",
+                      !n.read && "border-l-2 border-l-amber-400/70",
                     )}
                   >
                     <button

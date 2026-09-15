@@ -65,7 +65,7 @@ export function IncidentStatusBar({
         <span className="font-mono text-[11px] font-semibold text-zinc-100">
           {incident.incidentNumber}
         </span>
-        <span className="text-[8px] font-semibold uppercase tracking-[0.18em] text-orange-400/90">
+        <span className="text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-400/90">
           Possible Oil Slick
         </span>
         <div className="ml-auto flex items-center gap-1.5">
@@ -95,7 +95,7 @@ export function IncidentStatusBar({
               "h-full rounded-full transition-all duration-500",
               complete
                 ? "bg-emerald-500/80"
-                : "bg-gradient-to-r from-orange-600/80 to-orange-500",
+                : "bg-gradient-to-r from-amber-600/80 to-amber-500",
             )}
             style={{ width: `${Math.max(pct, 4)}%` }}
           />
@@ -116,7 +116,7 @@ export function IncidentStatusBar({
               Requires validation
             </span>
           ) : ready ? (
-            <span className="flex items-center gap-1 text-orange-400/90">
+            <span className="flex items-center gap-1 text-amber-400/90">
               <Download className="size-2.5" />
               Export to complete
             </span>
@@ -251,7 +251,7 @@ export function InvestigationProgressPanel({
     <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Compass className="size-3.5 text-orange-400" />
+          <Compass className="size-3.5 text-amber-400" />
           <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
             Investigation Progress
           </span>
@@ -267,7 +267,7 @@ export function InvestigationProgressPanel({
             "h-full rounded-full transition-all duration-500",
             wf.reportGenerated
               ? "bg-emerald-500/80"
-              : "bg-gradient-to-r from-orange-600/80 to-orange-500",
+              : "bg-gradient-to-r from-amber-600/80 to-amber-500",
           )}
           style={{ width: `${Math.max(pct, 4)}%` }}
         />
@@ -284,8 +284,8 @@ export function InvestigationProgressPanel({
       </div>
 
       {wf.reportGenerated && !complete && (
-        <div className="mt-3 rounded border border-orange-500/30 bg-orange-500/5 p-2">
-          <div className="flex items-center gap-1.5 text-[9px] font-semibold text-orange-400">
+        <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/5 p-2">
+          <div className="flex items-center gap-1.5 text-[9px] font-semibold text-amber-400">
             <Download className="size-3" />
             Report ready — export required
           </div>
@@ -342,7 +342,7 @@ export function InvestigationProgressPanel({
       {!wf.reportGenerated && !wf.runningStage && !isAnalyzing && (
         <button
           onClick={startInvestigation}
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded border border-orange-500/50 bg-orange-500/10 px-2.5 py-1.5 text-[9px] font-semibold text-orange-400 hover:bg-orange-500/20 transition-colors"
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-[9px] font-semibold text-amber-400 hover:bg-amber-500/20 transition-colors"
         >
           <Play className="size-2.5" />
           Run Investigation
@@ -414,7 +414,7 @@ function StageRow({
               state === "complete"
                 ? "text-zinc-300"
                 : state === "running"
-                  ? "text-orange-300"
+                  ? "text-amber-300"
                   : "text-zinc-500",
             )}
           >
@@ -426,7 +426,7 @@ function StageRow({
               state === "complete"
                 ? "text-emerald-500/80"
                 : state === "running"
-                  ? "text-orange-400"
+                  ? "text-amber-400"
                   : "text-zinc-700",
             )}
           >
@@ -446,7 +446,7 @@ function StageMark({ state }: { state: StageState }) {
     return <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />;
   }
   if (state === "running") {
-    return <Loader2 className="size-3 shrink-0 animate-spin text-orange-400" />;
+    return <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />;
   }
   if (state === "failed") {
     return <TriangleAlert className="size-3 shrink-0 text-red-400" />;

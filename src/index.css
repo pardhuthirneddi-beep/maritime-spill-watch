@@ -145,20 +145,20 @@
 
 /* Leaflet popup overrides */
 .maris-popup .leaflet-popup-content-wrapper {
-  background: #0a0b10;
-  border: 1px solid #27272a;
+  background: #0b1320;
+  border: 1px solid rgba(148, 193, 231, 0.22);
   border-radius: 4px;
-  color: #e4e4e7;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  color: #d7e3ec;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
 }
 
 .maris-popup .leaflet-popup-tip {
-  background: #0a0b10;
-  border: 1px solid #27272a;
+  background: #0b1320;
+  border: 1px solid rgba(148, 193, 231, 0.22);
 }
 
 .maris-popup .leaflet-popup-close-button {
-  color: #71717a;
+  color: #8ba3b5;
 }
 
 /* Smooth scroll for panels */
@@ -168,10 +168,10 @@
 
 /* Leaflet dark tooltip overrides */
 .maris-tooltip {
-  background: #0a0b10ee;
-  border: 1px solid #27272a;
-  color: #d4d4d8;
-  font-family: monospace;
+  background: #0b1320ee;
+  border: 1px solid rgba(148, 193, 231, 0.22);
+  color: #d7e3ec;
+  font-family: ui-monospace, Menlo, monospace;
   font-size: 10px;
   border-radius: 4px;
   padding: 6px 8px;
@@ -179,24 +179,104 @@
 }
 
 .maris-tooltip::before {
-  border-top-color: #27272a;
+  border-top-color: rgba(148, 193, 231, 0.22);
 }
 
 .maris-tooltip .leaflet-tooltip-content {
   margin: 0;
 }
 
-/* Leaflet dark map overrides */
+/* Leaflet dark map overrides + night-chart treatment */
 .leaflet-container {
-  background: #020508;
+  background: radial-gradient(120% 110% at 50% 42%, #0a1523 0%, #071019 55%, #050b12 100%);
+  font-family: ui-monospace, Menlo, monospace;
 }
 
 .leaflet-control-attribution {
-  display: none !important;
+  background: rgba(7, 13, 22, 0.75) !important;
+  color: #51677a !important;
+  font-size: 8px !important;
+  padding: 0 4px !important;
+}
+.leaflet-control-attribution a {
+  color: #51677a !important;
 }
 
-.leaflet-control-zoom {
-  display: none !important;
+/* Zoom control — instrument style */
+.leaflet-control-zoom a {
+  background: rgba(9, 17, 28, 0.92) !important;
+  color: #9fb8cc !important;
+  border: 1px solid rgba(148, 193, 231, 0.2) !important;
+  border-radius: 3px !important;
+  font-weight: 400 !important;
+  width: 24px !important;
+  height: 24px !important;
+  line-height: 22px !important;
+  margin-bottom: 2px;
+}
+.leaflet-control-zoom a:hover {
+  background: rgba(16, 28, 42, 0.95) !important;
+  color: #d7e3ec !important;
+}
+
+/* Scale bar — monospace instrument readout */
+.leaflet-control-scale-line {
+  background: rgba(7, 13, 22, 0.75) !important;
+  border: 1px solid rgba(148, 193, 231, 0.25) !important;
+  border-top: none !important;
+  color: #8ba3b5 !important;
+  font-family: ui-monospace, Menlo, monospace !important;
+  font-size: 9px !important;
+  letter-spacing: 0.05em;
+  padding: 1px 5px !important;
+}
+
+/* Coordinate readout chip */
+.maris-coord {
+  background: rgba(7, 13, 22, 0.82);
+  border: 1px solid rgba(148, 193, 231, 0.2);
+  border-radius: 3px;
+  color: #8ba3b5;
+  font-size: 10px;
+  font-family: ui-monospace, Menlo, monospace;
+  padding: 2px 8px;
+}
+
+/* Basemap layers.
+   - maris-ocean: Esri bathymetry inverted to a dark chart (land reads light,
+     ocean deep-navy, depth contours stay crisp) — the classic nautical-dark
+     technique, tuned so cartographic ink stays legible.
+   - maris-fallback: CARTO dark base underneath in case ocean tiles fail.
+   - maris-ocean-ref: chart reference labels, heavily muted. */
+.maris-ocean {
+  filter: invert(1) hue-rotate(185deg) brightness(0.92) contrast(0.92) saturate(0.8);
+  mix-blend-mode: screen;
+}
+.maris-fallback {
+  filter: brightness(0.85) saturate(0.6);
+}
+.maris-ocean-ref {
+  filter: invert(1) hue-rotate(185deg) brightness(0.7) contrast(0.85) saturate(0.4);
+  opacity: 0.5;
+  mix-blend-mode: screen;
+}
+
+/* Zoom-adaptive beacon suppression: hide pulsing rings when zoomed far out
+   (screen-space rings overwhelm real geometry at low zoom). */
+.maris-z-far .maris-ping {
+  display: none;
+}
+
+/* Ping ring animation */
+@keyframes maris-ping {
+  0% { transform: scale(0.55); opacity: 0.9; }
+  80%, 100% { transform: scale(2.1); opacity: 0; }
+}
+.maris-ping {
+  display: block;
+  animation: maris-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  transform-origin: center;
+  pointer-events: none;
 }
 
 /* ---- Naval command-center utilities ---- */
@@ -217,9 +297,9 @@
     radial-gradient(circle at 50% 50%, transparent 18%, rgba(120, 170, 220, 0.05) 19%, transparent 22%);
 }
 
-/* Gold braid divider — ceremonial navy trim */
+/* Chart-frame divider — steel-blue trim (replaces ceremonial gold) */
 .nav-braid {
-  background: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.55), transparent);
+  background: linear-gradient(90deg, transparent, rgba(148, 193, 231, 0.4), transparent);
   height: 1px;
 }
 
@@ -247,14 +327,14 @@
 .nav-frame::before {
   top: -1px;
   left: -1px;
-  border-top: 1px solid rgba(201, 162, 39, 0.6);
-  border-left: 1px solid rgba(201, 162, 39, 0.6);
+  border-top: 1px solid rgba(148, 193, 231, 0.55);
+  border-left: 1px solid rgba(148, 193, 231, 0.55);
 }
 .nav-frame::after {
   bottom: -1px;
   right: -1px;
-  border-bottom: 1px solid rgba(201, 162, 39, 0.6);
-  border-right: 1px solid rgba(201, 162, 39, 0.6);
+  border-bottom: 1px solid rgba(148, 193, 231, 0.55);
+  border-right: 1px solid rgba(148, 193, 231, 0.55);
 }
 
 /* Slow sweep animation for status beacon */

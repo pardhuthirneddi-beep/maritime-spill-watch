@@ -116,11 +116,11 @@ const LAYER_DEFS: {
   { id: "globe_traffic", label: "Demo AIS Traffic", icon: Radar, accent: "text-sky-300" },
   { id: "globe_vessels", label: "Vessels", icon: Ship, accent: "text-sky-300" },
   { id: "globe_tracks", label: "Vessel Tracks", icon: Route, accent: "text-sky-300/70" },
-  { id: "globe_spill", label: "Oil Spill", icon: Droplets, accent: "text-orange-400" },
+  { id: "globe_spill", label: "Oil Spill", icon: Droplets, accent: "text-amber-400" },
   { id: "globe_satellite", label: "SAR Swath", icon: Satellite, accent: "text-slate-300" },
   { id: "globe_boundaries", label: "Investigation Area", icon: Scan, accent: "text-sky-300/70" },
   { id: "globe_grid", label: "Evidence Markers", icon: MapPin, accent: "text-amber-300" },
-  { id: "globe_detection_zones", label: "Drift Forecast", icon: Waves, accent: "text-orange-300/80" },
+  { id: "globe_detection_zones", label: "Drift Forecast", icon: Waves, accent: "text-amber-300/80" },
   { id: "globe_correlation", label: "Source Connection", icon: Waypoints, accent: "text-violet-300" },
 ];
 
@@ -1256,9 +1256,9 @@ export default function Globe3DView({
       {selection?.kind === "spill" && incident && (
         <div className={cn(PANEL, "absolute left-1/2 top-3 z-20 -translate-x-1/2 px-3 py-1.5")}>
           <div className="flex items-center gap-2 text-[10px]">
-            <Target className="size-3.5 text-orange-400" />
+            <Target className="size-3.5 text-amber-400" />
             <span className="font-semibold text-zinc-100">{incident.label}</span>
-            <span className="font-mono text-orange-400">{incident.confidence.score}%</span>
+            <span className="font-mono text-amber-400">{incident.confidence.score}%</span>
             <span className="text-zinc-500">· {incident.polygon.areaKm2} km²</span>
           </div>
         </div>

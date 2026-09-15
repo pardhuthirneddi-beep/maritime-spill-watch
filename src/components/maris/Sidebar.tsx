@@ -128,7 +128,7 @@ export default function Sidebar({
                 <div className="font-mono text-[11px] font-semibold text-zinc-100">
                   {managedIncident.incidentNumber}
                 </div>
-                <div className="text-[8px] font-semibold uppercase tracking-[0.18em] text-orange-400/90">
+                <div className="text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-400/90">
                   Possible Oil Slick
                 </div>
                 <div className="mt-1.5 flex items-center gap-1.5">
@@ -258,12 +258,12 @@ export default function Sidebar({
                       className={cn(
                         "size-3 rounded-sm border transition-colors",
                         layer.enabled
-                          ? "border-orange-500 bg-orange-500/30"
+                          ? "border-amber-500 bg-amber-500/30"
                           : "border-zinc-600"
                       )}
                     >
                       {layer.enabled && (
-                        <div className="size-full flex items-center justify-center text-[8px] text-orange-400">
+                        <div className="size-full flex items-center justify-center text-[8px] text-amber-400">
                           ✓
                         </div>
                       )}
@@ -307,7 +307,7 @@ export default function Sidebar({
                 "flex w-full items-center justify-center gap-2 rounded border px-3 py-2 text-[11px] font-medium transition-all",
                 isAnalyzing
                   ? "border-zinc-700 bg-zinc-800 text-zinc-500 cursor-not-allowed"
-                  : "border-orange-500/50 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 hover:border-orange-500/70"
+                  : "border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/70"
               )}
             >
               {isAnalyzing ? (

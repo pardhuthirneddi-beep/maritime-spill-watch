@@ -388,6 +388,7 @@ export default function Dashboard() {
             driftResult={state.driftResult}
             hyperspectral={state.hyperspectral}
             environmental={state.environmental}
+            attributions={state.attributions}
             onVesselSelect={handleVesselSelect}
           />
 
@@ -437,7 +438,7 @@ export default function Dashboard() {
                   <div className="flex size-16 items-center justify-center rounded-2xl border border-sky-200/10 bg-zinc-900">
                     <svg
                       viewBox="0 0 24 24"
-                      className="size-8 text-orange-400/60"
+                      className="size-8 text-amber-400/60"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="1.5"
@@ -457,7 +458,7 @@ export default function Dashboard() {
                 </p>
                 <button
                   onClick={runInvestigation}
-                  className="inline-flex items-center gap-2 rounded border border-orange-500/50 bg-orange-500/10 px-4 py-2 text-[11px] font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
+                  className="inline-flex items-center gap-2 rounded border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -482,7 +483,7 @@ export default function Dashboard() {
               while the investigation pipeline runs. */}
           {state.isAnalyzing && (
             <div className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full border border-sky-200/10 bg-[#070d16]/90 px-3 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm">
-              <div className="size-3 rounded-full border-2 border-orange-500/30 border-t-orange-500 animate-spin" />
+              <div className="size-3 rounded-full border-2 border-amber-500/30 border-t-amber-500 animate-spin" />
               <span className="text-[9px] text-zinc-300">{state.analysisStep}</span>
             </div>
           )}
@@ -491,7 +492,7 @@ export default function Dashboard() {
           {hasData && !state.isAnalyzing && (
             <button
               onClick={() => navigate("/3d-intelligence")}
-              className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded border border-orange-500/50 bg-orange-500/10 px-2.5 py-1.5 text-[10px] font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
+              className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
               title="Open the spatial investigation environment"
             >
               <Orbit className="size-3.5" />
@@ -499,20 +500,28 @@ export default function Dashboard() {
             </button>
           )}
 
-          {/* Map legend */}
+          {/* Map legend — mirrors actual map symbology */}
           {hasData && (
-            <div className="absolute bottom-3 left-3 z-10 rounded border border-sky-200/10 bg-[#050a12]/90 px-2 py-1.5 text-[8px] text-zinc-500 space-y-0.5">
+            <div className="absolute bottom-3 left-3 z-10 rounded border border-sky-200/15 bg-[#070d16]/90 px-2.5 py-1.5 text-[8px] text-zinc-400 space-y-1 backdrop-blur-sm">
               <div className="flex items-center gap-1.5">
-                <div className="size-2 rounded-sm bg-orange-500/50 border border-orange-500" />
-                Oil Spill Polygon
+                <svg width="10" height="10" viewBox="0 0 24 24"><path d="M12 2.5 L19.5 21 L12 16.8 L4.5 21 Z" fill="#fbbf24"/></svg>
+                <span className="text-amber-300/90">Probable-source candidate</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="size-2 rounded-full bg-blue-400" />
-                AIS Vessel
+                <svg width="10" height="10" viewBox="0 0 24 24"><path d="M12 2.5 L19.5 21 L12 16.8 L4.5 21 Z" fill="#22d3ee"/></svg>
+                Ranked candidate (top 3)
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="size-2 rounded-full bg-cyan-400" />
-                Selected Vessel
+                <svg width="10" height="10" viewBox="0 0 24 24"><path d="M12 2.5 L19.5 21 L12 16.8 L4.5 21 Z" fill="#64748b"/></svg>
+                AIS traffic
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="size-2 rounded-sm border border-amber-500 bg-amber-500/25" />
+                Possible oil slick
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="size-2 rounded-full border border-violet-400 bg-violet-400/25" />
+                Probable origin (backtrack)
               </div>
             </div>
           )}

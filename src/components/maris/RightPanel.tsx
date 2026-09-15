@@ -129,12 +129,12 @@ export default function RightPanel({
       {isAnalyzing && (
         <div className="border-b border-sky-200/10 px-4 py-2">
           <div className="flex items-center gap-2 text-[10px] text-zinc-400">
-            <div className="size-3 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
+            <div className="size-3 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
             {analysisStep}
           </div>
           <div className="mt-1 h-1 w-full rounded-full bg-zinc-800 overflow-hidden">
             <div
-              className="h-full bg-orange-500/60 rounded-full transition-all duration-500"
+              className="h-full bg-amber-500/60 rounded-full transition-all duration-500"
               style={{ width: `${analysisProgress}%` }}
             />
           </div>
@@ -282,7 +282,7 @@ function AnalysisChronologyPanel({
             <span className="font-mono text-[8px] text-zinc-600">
               {managedIncident.incidentNumber}
             </span>
-            <span className="text-[7px] font-semibold uppercase tracking-[0.14em] text-orange-400/70">
+            <span className="text-[7px] font-semibold uppercase tracking-[0.14em] text-amber-400/70">
               Possible Oil Slick
             </span>
           </div>
@@ -396,8 +396,8 @@ function OverviewPanel({
       {/* Incident Card */}
       <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
         <div className="flex items-center gap-2 mb-2">
-          <AlertTriangle className="size-3.5 text-orange-400" />
-          <span className="text-[10px] font-semibold text-orange-400 uppercase">
+          <AlertTriangle className="size-3.5 text-amber-400" />
+          <span className="text-[10px] font-semibold text-amber-400 uppercase">
             {incident.label}
           </span>
         </div>
@@ -628,7 +628,7 @@ function AttributionPanel({
                 <span
                   className={cn(
                     "text-[10px] font-bold w-5 text-center",
-                    attr.rank <= 2 ? "text-orange-400" : "text-zinc-500"
+                    attr.rank <= 2 ? "text-amber-400" : "text-zinc-500"
                   )}
                 >
                   #{attr.rank}
@@ -709,8 +709,8 @@ function DriftPanel({
       {driftResult && (
         <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
           <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="size-3 text-orange-400" />
-            <span className="text-[10px] font-semibold text-orange-400 uppercase">
+            <TrendingUp className="size-3 text-amber-400" />
+            <span className="text-[10px] font-semibold text-amber-400 uppercase">
               Forward Prediction
             </span>
           </div>
@@ -930,7 +930,7 @@ function ThicknessPanel({
 function TimelinePanel({ timeline }: { timeline: TimelineEvent[] }) {
   const catColors: Record<string, string> = {
     vessel: "bg-blue-500",
-    detection: "bg-orange-500",
+    detection: "bg-amber-500",
     analysis: "bg-cyan-500",
     report: "bg-emerald-500",
   };

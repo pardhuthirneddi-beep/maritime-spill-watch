@@ -126,7 +126,7 @@ export default function Header({
 // displayed card stack.
 
 const BELL_KIND_COLOR: Record<IncidentNotification["kind"], string> = {
-  new_incident: "text-orange-400",
+  new_incident: "text-amber-400",
   incident_updated: "text-sky-300",
   evidence_added: "text-violet-300",
   candidates_ranked: "text-cyan-300",
@@ -155,9 +155,9 @@ function NotificationBell({
         )}
         title="Operational notifications"
       >
-        <Bell className={cn("size-3.5", unread > 0 && "text-orange-400")} />
+        <Bell className={cn("size-3.5", unread > 0 && "text-amber-400")} />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex size-3 items-center justify-center rounded-full bg-orange-500 text-[7px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex size-3 items-center justify-center rounded-full bg-amber-500 text-[7px] font-bold text-white">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
@@ -199,7 +199,7 @@ function NotificationBell({
                     className={cn(
                       "w-full rounded border px-2 py-1.5 text-left transition-colors",
                       !n.read
-                        ? "border-l-2 border-l-orange-400/70 border-sky-200/10 bg-zinc-900/60"
+                        ? "border-l-2 border-l-amber-400/70 border-sky-200/10 bg-zinc-900/60"
                         : "border-sky-200/10 bg-zinc-900/30",
                     )}
                   >

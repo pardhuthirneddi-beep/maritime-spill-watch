@@ -68,11 +68,11 @@ export function InvestigationProgressOverlay({
         title="Reopen investigation progress"
       >
         {running ? (
-          <Loader2 className="size-3 animate-spin text-orange-400" />
+          <Loader2 className="size-3 animate-spin text-amber-400" />
         ) : complete ? (
           <FileCheck2 className="size-3 text-emerald-400" />
         ) : (
-          <Compass className="size-3 text-orange-400" />
+          <Compass className="size-3 text-amber-400" />
         )}
         <span className="text-[8px] font-semibold uppercase tracking-wider text-zinc-500">
           {complete ? "Investigation" : "Progress"}
@@ -90,7 +90,7 @@ export function InvestigationProgressOverlay({
     return (
       <div className="pointer-events-auto absolute left-3 top-3 z-20 flex w-56 items-center gap-2 rounded border border-sky-200/10 bg-[#070d16]/95 px-2.5 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm">
         {running && (
-          <Loader2 className="size-3 shrink-0 animate-spin text-orange-400" />
+          <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />
         )}
         <span className="text-[8px] font-semibold uppercase tracking-wider text-zinc-500">
           Investigation
@@ -101,7 +101,7 @@ export function InvestigationProgressOverlay({
               "h-full rounded-full transition-all duration-500",
               complete
                 ? "bg-emerald-500/80"
-                : "bg-gradient-to-r from-orange-600/80 to-orange-500",
+                : "bg-gradient-to-r from-amber-600/80 to-amber-500",
             )}
             style={{ width: `${Math.max(pct, 4)}%` }}
           />
@@ -128,7 +128,7 @@ export function InvestigationProgressOverlay({
     <div className="pointer-events-auto absolute left-3 top-3 z-20 w-60 max-w-[calc(100vw-6rem)] rounded border border-sky-200/10 bg-[#070d16]/95 shadow-lg shadow-black/40 backdrop-blur-sm">
       {/* Header: title + pct + minimize/close */}
       <div className="flex items-center gap-2 border-b border-sky-200/10 px-2.5 py-1.5">
-        <Compass className="size-3 shrink-0 text-orange-400" />
+        <Compass className="size-3 shrink-0 text-amber-400" />
         <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-wider text-zinc-300">
           Investigation Progress
         </span>
@@ -159,7 +159,7 @@ export function InvestigationProgressOverlay({
               "h-full rounded-full transition-all duration-500",
               complete
                 ? "bg-emerald-500/80"
-                : "bg-gradient-to-r from-orange-600/80 to-orange-500",
+                : "bg-gradient-to-r from-amber-600/80 to-amber-500",
             )}
             style={{ width: `${Math.max(pct, 4)}%` }}
           />
@@ -180,8 +180,8 @@ export function InvestigationProgressOverlay({
             </>
           ) : wf.runningStage ? (
             <>
-              <Loader2 className="size-2.5 animate-spin text-orange-400" />
-              <span className="font-semibold text-orange-300">
+              <Loader2 className="size-2.5 animate-spin text-amber-400" />
+              <span className="font-semibold text-amber-300">
                 {INVESTIGATION_STAGES.find((s) => s.id === wf.runningStage)
                   ?.label ?? "Running"}
               </span>

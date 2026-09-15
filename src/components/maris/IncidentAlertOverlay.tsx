@@ -51,14 +51,14 @@ export default function IncidentAlertOverlay({
 
   return (
     <div className="absolute right-3 top-[8.5rem] z-30 w-72 pointer-events-auto">
-      <div className="rounded border border-orange-500/40 bg-[#070d16]/97 shadow-xl shadow-black/50 backdrop-blur-sm">
+      <div className="rounded border border-amber-500/40 bg-[#070d16]/97 shadow-xl shadow-black/50 backdrop-blur-sm">
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-orange-500/30 px-3 py-2">
+        <div className="flex items-center gap-2 border-b border-amber-500/30 px-3 py-2">
           <span className="relative flex size-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-500 opacity-40" />
-            <span className="relative inline-flex size-2 rounded-full bg-orange-500" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-40" />
+            <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
           </span>
-          <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-orange-400">
+          <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-amber-400">
             New Maritime Incident
           </span>
           <button
@@ -75,7 +75,7 @@ export default function IncidentAlertOverlay({
           <div className="font-mono text-[12px] font-semibold text-zinc-100">
             {incident.incidentNumber}
           </div>
-          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-orange-400/90">
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-amber-400/90">
             Possible Oil Slick
           </div>
         </div>
@@ -122,7 +122,7 @@ export default function IncidentAlertOverlay({
             </AlertField>
           )}
           <div className="pt-0.5">
-            <span className="rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 text-[8px] font-semibold tracking-wider text-orange-400">
+            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-semibold tracking-wider text-amber-400">
               Requires Validation
             </span>
           </div>
@@ -137,9 +137,9 @@ export default function IncidentAlertOverlay({
               onViewIncident?.();
             }}
             className={cn(
-              "w-full rounded border border-orange-500/50 bg-orange-500/10 px-2.5 py-1.5",
-              "text-[9px] font-semibold tracking-wider text-orange-400",
-              "hover:bg-orange-500/20 hover:border-orange-500/70 transition-colors",
+              "w-full rounded border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5",
+              "text-[9px] font-semibold tracking-wider text-amber-400",
+              "hover:bg-amber-500/20 hover:border-amber-500/70 transition-colors",
             )}
           >
             View Incident

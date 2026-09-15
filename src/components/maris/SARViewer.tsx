@@ -376,7 +376,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           {/* Open in 3D — bridges SAR detection to the spatial investigation view */}
           <button
             onClick={() => navigate("/3d-intelligence")}
-            className="flex items-center gap-1.5 rounded border border-orange-500/50 bg-orange-500/10 px-2 py-1 text-[9px] font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
+            className="flex items-center gap-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
             title="Open this detection in the 3D Intelligence environment"
           >
             <Orbit className="size-3" />
@@ -440,7 +440,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
             </h3>
             <div className="space-y-1.5">
               <MetaRow label="Candidates" value={`${detections.length} identified`} />
-              <MetaRow label="Primary" value={`${detections[0]?.confidence || 0}% confidence`} color="text-orange-400" />
+              <MetaRow label="Primary" value={`${detections[0]?.confidence || 0}% confidence`} color="text-amber-400" />
               <MetaRow label="Area" value={`${detections[0]?.areaKm2 || 0} km²`} />
               <MetaRow label="Length" value={`${detections[0]?.lengthKm || 0} km`} />
               <MetaRow label="Processing" value={`${analysis.processingTime}s`} />
@@ -457,13 +457,13 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                     ● {linkedIncident.status.replace("_", " ").toUpperCase()}
                   </span>
                 </div>
-                <div className="mt-1 text-[8px] uppercase tracking-wider text-orange-400/90">
+                <div className="mt-1 text-[8px] uppercase tracking-wider text-amber-400/90">
                   Possible Oil Slick
                 </div>
                 <div className="mt-0.5 text-[8px] text-zinc-500">
                   Last updated {new Date(linkedIncident.lastUpdatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" })} UTC · {linkedIncident.timeline.length} events
                 </div>
-                <div className="mt-1 rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 text-center text-[7px] font-semibold tracking-wider text-orange-400">
+                <div className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-center text-[7px] font-semibold tracking-wider text-amber-400">
                   REQUIRES VALIDATION
                 </div>
               </div>
@@ -514,7 +514,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                 </div>
                 <div className="space-y-1">
                   <MetaRow label="Classification" value={selectedDetection.classification.replace("_", " ")} />
-                  <MetaRow label="Confidence" value={`${selectedDetection.confidence}%`} color="text-orange-400" />
+                  <MetaRow label="Confidence" value={`${selectedDetection.confidence}%`} color="text-amber-400" />
                   <MetaRow label="Area" value={`${selectedDetection.areaKm2} km²`} />
                   <MetaRow label="Length" value={`${selectedDetection.lengthKm} km`} />
                   <MetaRow label="Center" value={`${selectedDetection.center[0].toFixed(4)}°N, ${selectedDetection.center[1].toFixed(4)}°E`} mono />
@@ -527,7 +527,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                 {selectedDetection.classification === "possible_oil" && (
                   <button
                     onClick={() => navigate("/3d-intelligence")}
-                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-orange-500/50 bg-orange-500/10 px-2 py-1.5 text-[9px] font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
                   >
                     <Orbit className="size-3" />
                     Open in 3D
@@ -602,7 +602,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                 onClick={() => setShowOverlay(!showOverlay)}
                 className={cn(
                   "flex items-center gap-1.5 text-[9px] w-full px-1.5 py-0.5 rounded transition-colors",
-                  showOverlay ? "text-orange-400 bg-orange-500/10" : "text-zinc-500 hover:text-zinc-300"
+                  showOverlay ? "text-amber-400 bg-amber-500/10" : "text-zinc-500 hover:text-zinc-300"
                 )}
               >
                 {showOverlay ? <Eye className="size-2.5" /> : <EyeOff className="size-2.5" />}
@@ -627,7 +627,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                     max="100"
                     value={overlayOpacity * 100}
                     onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
-                    className="w-full h-1 accent-orange-500"
+                    className="w-full h-1 accent-amber-500"
                   />
                 </div>
               )}
@@ -638,7 +638,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10">
             <div className="flex items-center gap-3 rounded border border-sky-200/10/80 bg-[#0a0b10]/90 px-3 py-1.5">
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-0.5 bg-orange-500 border border-dashed border-orange-500" />
+                <div className="w-3 h-0.5 bg-amber-500 border border-dashed border-amber-500" />
                 <span className="text-[8px] text-zinc-500">Possible Oil Slick</span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -669,7 +669,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                 className={cn(
                   "w-full text-left rounded border p-2 transition-colors",
                   selectedDetection?.id === det.id
-                    ? "border-orange-500/40 bg-orange-500/5"
+                    ? "border-amber-500/40 bg-amber-500/5"
                     : "border-sky-200/10/60 bg-zinc-900/20 hover:border-zinc-700"
                 )}
               >
@@ -680,7 +680,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                   <span
                     className={cn(
                       "text-[10px] font-bold",
-                      det.classification === "possible_oil" ? "text-orange-400" : "text-zinc-500"
+                      det.classification === "possible_oil" ? "text-amber-400" : "text-zinc-500"
                     )}
                   >
                     {det.confidence}%
@@ -693,7 +693,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
                   <span className={cn(
                     "text-[7px] px-1 rounded",
                     det.classification === "possible_oil"
-                      ? "bg-orange-500/20 text-orange-400"
+                      ? "bg-amber-500/20 text-amber-400"
                       : "bg-zinc-800 text-zinc-500"
                   )}>
                     {det.classification.replace("_", " ")}
@@ -711,7 +711,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
             <div className="space-y-1.5">
               {DEMO_INCIDENT.confidence.factors.map((f, i) => (
                 <div key={i} className="flex items-start gap-1.5">
-                  <div className="mt-1 w-1 h-1 rounded-full bg-orange-500 shrink-0" />
+                  <div className="mt-1 w-1 h-1 rounded-full bg-amber-500 shrink-0" />
                   <span className="text-[9px] text-zinc-400 leading-tight">{f}</span>
                 </div>
               ))}

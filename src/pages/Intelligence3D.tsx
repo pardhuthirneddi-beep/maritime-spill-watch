@@ -82,7 +82,7 @@ export default function Intelligence3D() {
                 ● {STATUS_LABELS[managedIncident.status]}
               </span>
               <div className="h-4 w-px bg-zinc-800" />
-              <span className="text-[8px] uppercase tracking-wider text-orange-400/90">
+              <span className="text-[8px] uppercase tracking-wider text-amber-400/90">
                 Possible Oil Slick — Requires Validation
               </span>
             </>
