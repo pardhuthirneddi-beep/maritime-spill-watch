@@ -59,6 +59,14 @@ interface RightPanelProps {
   onDownloadJson: () => void;
 }
 
+// Oil-thickness ramp — mirrors MapView THICKNESS_RAMP (ocean-legible hues).
+const THICKNESS_RAMP: Record<string, string> = {
+  "Thin Sheen": "#7dd3fc",
+  "Moderate": "#38bdf8",
+  "Thick": "#0ea5e9",
+  "Very Thick": "#0369a1",
+};
+
 export default function RightPanel({
   view,
   incident,
@@ -827,7 +835,7 @@ function ThicknessPanel({
                 <div className="flex items-center gap-2">
                   <div
                     className="size-2 rounded-sm"
-                    style={{ background: tc.color }}
+                    style={{ background: THICKNESS_RAMP[tc.label] ?? tc.color }}
                   />
                   <span className="text-[10px] text-zinc-300">{tc.label}</span>
                 </div>
@@ -840,8 +848,8 @@ function ThicknessPanel({
                   className="h-full rounded-full"
                   style={{
                     width: `${tc.percentage}%`,
-                    background: tc.color,
-                    opacity: 0.7,
+                    background: THICKNESS_RAMP[tc.label] ?? tc.color,
+                    opacity: 0.85,
                   }}
                 />
               </div>

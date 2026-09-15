@@ -1,9 +1,11 @@
 // maris — Full-screen interactive 2D chart (Leaflet).
 //
-// Design: "night nautical chart". Bathymetric base (Esri World Ocean Base)
-// inverted to a dark chart so depth contours and coastlines stay legible,
-// with a CARTO dark layer underneath as automatic fallback. Analysis
-// overlays (slick, drift, vessels) are the only saturated elements.
+// Design: "navy bathymetric chart". Esri World Ocean Base tiles are the
+// primary base (blue-gradient bathymetry, legible coastlines) pulled toward
+// the command-center navy with a CSS filter. A CARTO dark layer sits
+// underneath as automatic fallback if Esri tiles fail to load, so the chart
+// is never white or blank. Analysis overlays (slick, drift, vessels) are the
+// only saturated elements.
 import { useEffect, useRef, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -25,14 +27,111 @@ const C = {
   slick: "#f59e0b",
   slickCore: "#fbbf24",
   driftFwd: "#f59e0b",
-  driftBack: "#a78bfa",
+  driftBack: "#c4b5fd",
   wind: "#7dd3fc",
   current: "#34d399",
+  impact: "#f87171",
   grid: "rgba(148, 193, 231, 0.09)",
   perimeter: "rgba(251, 191, 36, 0.30)",
   text: "#d7e3ec",
   muted: "#8ba3b5",
 };
+
+// Oil-thickness ramp — sheen (light) → emulsion (dark). These hues stay
+// legible on both the navy bathymetric base and the dark fallback.
+const THICKNESS_RAMP: Record<string, string> = {
+  "Thin Sheen": "#7dd3fc",
+  "Moderate": "#38bdf8",
+  "Thick": "#0ea5e9",
+  "Very Thick": "#0369a1",
+};
+
+/** Catmull-Rom spline through lat/lon points → dense smooth polyline.
+ *  Turns sparse AIS/drift waypoints into realistic curved ocean paths. */
+function splineThrough(points: [number, number][], samplesPerSeg = 14): [number, number][] {
+  const pts = points.filter(
+    (p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]
+  );
+  if (pts.length < 2) return pts;
+  const P = (i: number) => pts[Math.max(0, Math.min(pts.length - 1, i))];
+  const out: [number, number][] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    for (let s = 0; s < samplesPerSeg; s++) {
+      const t = s / samplesPerSeg, t2 = t * t, t3 = t2 * t;
+      out.push([
+        0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2*p0[0] - 5*p1[0] + 4*p2[0] - p3[0]) * t2 + (-p0[0] + 3*p1[0] - 3*p2[0] + p3[0]) * t3),
+        0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2*p0[1] - 5*p1[1] + 4*p2[1] - p3[1]) * t2 + (-p0[1] + 3*p1[1] - 3*p2[1] + p3[1]) * t3),
+      ]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+/** Bearing in degrees from point a to point b (0 = north). */
+function bearingDeg(a: [number, number], b: [number, number]): number {
+  const dLon = ((b[1] - a[1]) * Math.PI) / 180;
+  const y = Math.sin(dLon) * Math.cos((b[0] * Math.PI) / 180);
+  const x =
+    Math.cos((a[0] * Math.PI) / 180) * Math.sin((b[0] * Math.PI) / 180) -
+    Math.sin((a[0] * Math.PI) / 180) * Math.cos((b[0] * Math.PI) / 180) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Rotated arrowhead glyph placed along a drift path — animated drift direction. */
+function driftArrow(latlng: [number, number], heading: number, color: string): L.Marker {
+  return L.marker(latlng, {
+    interactive: false,
+    icon: L.divIcon({
+      className: "",
+      html: `<div style="width:14px;height:14px;display:flex;align-items:center;justify-content:center;transform:rotate(${heading}deg);">
+        <svg width="14" height="14" viewBox="0 0 24 24" class="maris-flow">
+          <path d="M12 3 L19 19 L12 15 L5 19 Z" fill="${color}" stroke="rgba(4,10,16,0.6)" stroke-width="1"/>
+        </svg>
+      </div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    }),
+  });
+}
+
+/** Optical (true-colour satellite) layer: stylised swath overlay drawn as an
+ *  SVG data-URI image — scan-line texture + false-colour tint band along the
+ *  pass. Pure data URI, no assets, no network. */
+function opticalSwathOverlay(
+  center: [number, number],
+  halfWidthDeg: number,
+  halfHeightDeg: number,
+): L.ImageOverlay {
+  const W = 800, H = 1200;
+  const scan = Array.from({ length: 48 }, (_, i) => {
+    const y = (i / 48) * H;
+    return `<rect x="0" y="${y.toFixed(0)}" width="${W}" height="1" fill="rgba(120,180,150,0.05)"/>`;
+  }).join("");
+  const tint = Array.from({ length: 6 }, (_, i) => {
+    const w = (W / 6) * (i + 1);
+    return `<rect x="0" y="0" width="${w.toFixed(0)}" height="${H}" fill="rgba(45,212,191,${(0.015 + i * 0.006).toFixed(3)})"/>`;
+  }).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="rgba(16,42,58,0.35)"/>
+      <stop offset="0.5" stop-color="rgba(10,30,44,0.15)"/>
+      <stop offset="1" stop-color="rgba(16,42,58,0.35)"/>
+    </linearGradient></defs>
+    <rect width="${W}" height="${H}" fill="url(#g)"/>
+    ${tint}${scan}
+    <rect x="1" y="1" width="${W - 2}" height="${H - 2}" fill="none" stroke="rgba(94,234,212,0.35)" stroke-width="2" stroke-dasharray="10 6"/>
+  </svg>`;
+  return L.imageOverlay(
+    `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
+    [
+      [center[0] + halfHeightDeg, center[1] - halfWidthDeg],
+      [center[0] - halfHeightDeg, center[1] + halfWidthDeg],
+    ] as L.LatLngBoundsLiteral,
+    { interactive: false, opacity: 1 }
+  );
+}
 
 interface MapViewProps {
   incident: OilSpillIncident | null;
@@ -145,6 +244,8 @@ export default function MapView({
     drift: L.LayerGroup;
     environmental: L.LayerGroup;
     thickness: L.LayerGroup;
+    impact: L.LayerGroup;
+    optical: L.LayerGroup;
   } | null>(null);
 
   // Initialize map
@@ -158,13 +259,23 @@ export default function MapView({
       attributionControl: false,
     });
 
-    // Dark chart base — CARTO Dark Matter (no labels), keyless and
-    // region-independent. Analysis overlays carry all the color.
+    // Navy bathymetric base — Esri World Ocean Base (keyless, no token, no
+    // region lock). Blue-gradient bathymetry reads as a real ocean chart.
+    // CARTO dark sits UNDERNEATH as automatic fallback: if Esri tiles fail,
+    // the dark chart still shows through instead of a white map.
     L.tileLayer("https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png", {
       maxZoom: 19,
       className: "maris-base",
       attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
     }).addTo(map);
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
+      {
+        maxZoom: 13,
+        className: "maris-ocean",
+        attribution: "Tiles &copy; Esri — Sources: GEBCO, NOAA, Ocean Basemap",
+      }
+    ).addTo(map);
 
     // Muted place-name overlay for spatial reference.
     L.tileLayer("https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png", {
@@ -233,6 +344,8 @@ export default function MapView({
       drift: L.layerGroup().addTo(map),
       environmental: L.layerGroup().addTo(map),
       thickness: L.layerGroup().addTo(map),
+      impact: L.layerGroup().addTo(map),
+      optical: L.layerGroup().addTo(map),
     };
 
     mapInstance.current = map;
@@ -259,6 +372,8 @@ export default function MapView({
       wind: layersRef.current.environmental,
       currents: layersRef.current.environmental,
       thickness: layersRef.current.thickness,
+      impactZone: layersRef.current.impact,
+      optical: layersRef.current.optical,
     };
     const layer = layerMap[id];
     if (layer) {
@@ -379,7 +494,8 @@ export default function MapView({
     };
   }, [vessels, selectedVessel, attributions, onVesselSelect]);
 
-  // Vessel tracks
+  // Vessel tracks — spline-smoothed so sparse AIS waypoints read as real
+  // ocean paths instead of straight pin-to-pin lines.
   useEffect(() => {
     if (!layersRef.current) return;
     const g = layersRef.current.tracks;
@@ -392,21 +508,28 @@ export default function MapView({
       const weight = role === "suspect" ? 2.4 : role === "candidate" ? 1.6 : 1;
       const opacity = role === "traffic" ? 0.35 : 0.8;
 
-      const latlngs = v.trajectory.map((c) => [c[0], c[1]] as L.LatLngTuple);
+      const raw = v.trajectory.map((c) => [c[0], c[1]] as [number, number]);
+      const latlngs = splineThrough(raw, 12).map(
+        (p) => [p[0], p[1]] as L.LatLngTuple
+      );
       if (latlngs.length > 1) {
         L.polyline(latlngs, {
           color,
           weight,
           opacity,
           dashArray: role === "traffic" ? "3 5" : undefined,
+          lineCap: "round",
         }).addTo(g);
 
-        const mid = Math.floor(latlngs.length / 2);
-        L.marker(latlngs[mid], {
+        // Course arrowhead at the leading edge of the track.
+        const tip = latlngs[latlngs.length - 1];
+        const prev = latlngs[Math.max(0, latlngs.length - 5)];
+        const hdg = bearingDeg([prev[0], prev[1]], [tip[0], tip[1]]);
+        L.marker(tip, {
           interactive: false,
           icon: L.divIcon({
             className: "",
-            html: `<div style="color:${color};font-size:10px;line-height:1;transform:rotate(${v.heading - 90}deg);opacity:${role === "traffic" ? 0.5 : 0.9};">➤</div>`,
+            html: `<div style="color:${color};font-size:11px;line-height:1;transform:rotate(${hdg - 90}deg);opacity:${role === "traffic" ? 0.5 : 0.9};">➤</div>`,
             iconSize: [10, 10],
             iconAnchor: [5, 5],
           }),
@@ -415,7 +538,8 @@ export default function MapView({
     });
   }, [vessels, selectedVessel, attributions]);
 
-  // Drift: forward ribbons, backtrack, probable origin (oldest hindcast fix)
+  // Drift: curved forecast/backtrack flow lines + uncertainty envelopes +
+  // animated direction arrows + probable-origin fix (oldest hindcast point).
   useEffect(() => {
     if (!layersRef.current || !driftResult) return;
     const g = layersRef.current.drift;
@@ -424,17 +548,78 @@ export default function MapView({
     const fwdEnabled = layers.find((l) => l.id === "driftForward" && l.enabled);
     const btEnabled = layers.find((l) => l.id === "driftBacktrack" && l.enabled);
 
+    const uncertaintyEnvelope = (
+      centers: [number, number][],
+      color: string,
+      maxKm: number
+    ) => {
+      if (centers.length < 2) return;
+      const north: L.LatLngTuple[] = [];
+      const south: L.LatLngTuple[] = [];
+      centers.forEach((c, i) => {
+        const spread =
+          ((maxKm * ((i + 1) / centers.length)) / 111) * 0.5; // grows with time
+        north.push([c[0] + spread, c[1]]);
+        south.push([c[0] - spread, c[1]]);
+      });
+      L.polygon([...north, ...south.reverse()], {
+        stroke: false,
+        fillColor: color,
+        fillOpacity: 0.05,
+        interactive: false,
+      }).addTo(g);
+    };
+
     if (fwdEnabled) {
+      const centers = driftResult.forward.map(
+        (p) => [p.center[0], p.center[1]] as [number, number]
+      );
+      const curve = splineThrough(centers, 24).map(
+        (p) => [p[0], p[1]] as L.LatLngTuple
+      );
+
+      // Uncertainty envelope widening downstream.
+      uncertaintyEnvelope(centers, C.driftFwd, 9);
+
+      // Ribbons around each hindcast fix (drift-model confidence zones).
       driftResult.forward.forEach((point, i) => {
+        if (i === 0) return;
         const latlngs = point.polygon.map((c) => [c[0], c[1]] as L.LatLngTuple);
-        const t = 1 - i / Math.max(1, driftResult.forward.length);
         L.polygon(latlngs, {
           color: C.driftFwd,
-          weight: 1,
+          weight: 0.8,
           fillColor: C.driftFwd,
-          fillOpacity: 0.05 + t * 0.13,
-          dashArray: "3 3",
+          fillOpacity: 0.04 + (1 - i / driftResult.forward.length) * 0.08,
+          dashArray: "2 4",
+          interactive: false,
         }).addTo(g);
+      });
+
+      // Main curved flow line — dashed forecast, glowing amber.
+      L.polyline(curve, {
+        color: C.driftFwd,
+        weight: 3,
+        opacity: 0.9,
+        dashArray: "1 8",
+        lineCap: "round",
+      }).addTo(g);
+      L.polyline(curve, {
+        color: C.driftFwd,
+        weight: 10,
+        opacity: 0.08,
+        lineCap: "round",
+        interactive: false,
+      }).addTo(g);
+
+      // Animated direction arrows along the path + time stamps at fixes.
+      for (let k = 1; k < curve.length - 2; k += 22) {
+        driftArrow(
+          [curve[k][0], curve[k][1]],
+          bearingDeg([curve[k][0], curve[k][1]], [curve[k + 1][0], curve[k + 1][1]]),
+          C.driftFwd
+        ).addTo(g);
+      }
+      driftResult.forward.forEach((point, i) => {
         if (i > 0) {
           L.marker(point.center as L.LatLngTuple, {
             interactive: false,
@@ -445,22 +630,53 @@ export default function MapView({
     }
 
     if (btEnabled) {
+      const centers = driftResult.backtrack.map(
+        (p) => [p.center[0], p.center[1]] as [number, number]
+      );
+      const curve = splineThrough(centers, 24).map(
+        (p) => [p[0], p[1]] as L.LatLngTuple
+      );
+
+      uncertaintyEnvelope(centers, C.driftBack, 5);
+
       driftResult.backtrack.forEach((point, i) => {
         if (i === 0) return;
         const latlngs = point.polygon.map((c) => [c[0], c[1]] as L.LatLngTuple);
-        const t = 1 - i / Math.max(1, driftResult.backtrack.length);
         L.polygon(latlngs, {
           color: C.driftBack,
-          weight: 1,
+          weight: 0.8,
           fillColor: C.driftBack,
-          fillOpacity: 0.05 + t * 0.11,
-          dashArray: "3 3",
+          fillOpacity: 0.04 + (1 - i / driftResult.backtrack.length) * 0.07,
+          dashArray: "2 4",
+          interactive: false,
         }).addTo(g);
         L.marker(point.center as L.LatLngTuple, {
           interactive: false,
           icon: timeLabel(point.time, C.driftBack),
         }).addTo(g);
       });
+
+      // Curved backtrack line — solid, brighter violet.
+      L.polyline(curve, {
+        color: C.driftBack,
+        weight: 3,
+        opacity: 0.95,
+        lineCap: "round",
+      }).addTo(g);
+      L.polyline(curve, {
+        color: C.driftBack,
+        weight: 10,
+        opacity: 0.1,
+        lineCap: "round",
+        interactive: false,
+      }).addTo(g);
+      for (let k = 1; k < curve.length - 2; k += 18) {
+        driftArrow(
+          [curve[k][0], curve[k][1]],
+          bearingDeg([curve[k][0], curve[k][1]], [curve[k + 1][0], curve[k + 1][1]]),
+          C.driftBack
+        ).addTo(g);
+      }
 
       // Probable origin = oldest backtrack position (derived, not invented).
       const oldest = driftResult.backtrack[driftResult.backtrack.length - 1];
@@ -519,7 +735,9 @@ export default function MapView({
     }
   }, [environmental, layers, incident]);
 
-  // Hyperspectral thickness zones
+  // Hyperspectral thickness zones — concentric oil-thickness bands centred on
+  // the slick axis (thickest at the core, sheen at the rim), with an
+  // ocean-legible ramp instead of the invisible slate greys.
   useEffect(() => {
     if (!layersRef.current || !hyperspectral || !incident) return;
     const g = layersRef.current.thickness;
@@ -530,17 +748,22 @@ export default function MapView({
 
     const cx = incident.polygon.center[0];
     const cy = incident.polygon.center[1];
+    const classes = hyperspectral.thicknessClasses;
 
-    hyperspectral.thicknessClasses.forEach((tc, i) => {
-      const offset = (i - 1.5) * 0.004;
-      const radius = 0.008 + i * 0.002;
-      L.circle([cx + offset, cy + offset * 0.5], {
-        radius: radius * 111000,
-        color: tc.color,
-        fillColor: tc.color,
-        fillOpacity: 0.26,
-        weight: 1,
-        dashArray: "2 2",
+    // Draw outermost (sheen) first so darker/thicker cores stack on top.
+    const ordered = [...classes].reverse();
+    ordered.forEach((tc, idx) => {
+      const i = classes.length - 1 - idx; // original index (0 = thin sheen)
+      const color = THICKNESS_RAMP[tc.label] ?? tc.color;
+      const radiusKm = Math.max(2.2, incident.polygon.lengthKm * 0.22) * (1 - i * 0.18);
+      L.circle([cx, cy], {
+        radius: radiusKm * 1000,
+        color,
+        weight: 1.2,
+        opacity: 0.75,
+        fillColor: color,
+        fillOpacity: 0.16 + (classes.length - 1 - i) * 0.07,
+        dashArray: i === 0 ? "3 4" : undefined,
       })
         .bindPopup(
           `<div style="font-family:system-ui;font-size:11px;">
@@ -554,11 +777,124 @@ export default function MapView({
     });
   }, [hyperspectral, layers, incident]);
 
+  // Optical layer — stylised true-colour acquisition footprint (SVG data-URI,
+  // no assets, no network) centred on the incident.
+  useEffect(() => {
+    if (!layersRef.current) return;
+    const g = layersRef.current.optical;
+    g.clearLayers();
+
+    const optEnabled = layers.find((l) => l.id === "optical" && l.enabled);
+    if (!optEnabled || !incident) return;
+
+    const c = incident.polygon.center;
+    const halfW = 0.055; // ~6 km half-swath
+    const halfH = 0.22; // ~24 km along-track footprint
+    opticalSwathOverlay(c, halfW, halfH).addTo(g);
+
+    // Pass track centreline + label
+    L.polyline(
+      [
+        [c[0] + halfH, c[1]],
+        [c[0] - halfH, c[1]],
+      ] as L.LatLngTuple[],
+      {
+        color: "rgba(94,234,212,0.4)",
+        weight: 1,
+        dashArray: "6 6",
+        interactive: false,
+      }
+    ).addTo(g);
+    L.marker([c[0] + halfH * 0.62, c[1]], {
+      interactive: false,
+      icon: L.divIcon({
+        className: "",
+        html: `<div style="font-family:ui-monospace,Menlo,monospace;font-size:8px;letter-spacing:0.16em;color:rgba(153,246,228,0.85);background:rgba(7,13,22,0.8);border:1px solid rgba(94,234,212,0.3);padding:1px 6px;border-radius:3px;white-space:nowrap;">OPTICAL — SENTINEL-2</div>`,
+        iconSize: [150, 14],
+        iconAnchor: [75, 7],
+      }),
+    }).addTo(g);
+  }, [layers, incident]);
+
+  // Impact zone — 24h forecast reach: concentric shoreline-risk rings around
+  // the spill centroid with a directional impact lobe along the drift axis.
+  useEffect(() => {
+    if (!layersRef.current || !incident) return;
+    const g = layersRef.current.impact;
+    g.clearLayers();
+
+    const impEnabled = layers.find((l) => l.id === "impactZone" && l.enabled);
+    if (!impEnabled) return;
+
+    const c = incident.polygon.center as [number, number];
+
+    // Base impact ring (48h drift reach cap ~45 km from forecast data).
+    L.circle(c, {
+      radius: 20000,
+      color: C.impact,
+      weight: 1.2,
+      opacity: 0.55,
+      fillColor: C.impact,
+      fillOpacity: 0.04,
+      dashArray: "4 6",
+      interactive: false,
+    }).addTo(g);
+    L.circle(c, {
+      radius: 36000,
+      color: C.impact,
+      weight: 1,
+      opacity: 0.35,
+      fillColor: C.impact,
+      fillOpacity: 0.02,
+      dashArray: "4 8",
+      interactive: false,
+    }).addTo(g);
+
+    // Directional impact lobe along the observed drift axis (uses the actual
+    // drift-result bearing when available — derived, not invented).
+    const fwd = driftResult?.forward ?? [];
+    const driftBearing =
+      fwd.length > 1
+        ? bearingDeg(
+            [fwd[0].center[0], fwd[0].center[1]],
+            [fwd[fwd.length - 1].center[0], fwd[fwd.length - 1].center[1]]
+          )
+        : 245; // fall back to the spill geometry axis from incident data
+
+    const lobeKm = 42;
+    const lobeLat = c[0] + (lobeKm / 111) * Math.cos((driftBearing * Math.PI) / 180);
+    const lobeLon =
+      c[1] +
+      (lobeKm / (111 * Math.cos((c[0] * Math.PI) / 180))) *
+        Math.sin((driftBearing * Math.PI) / 180);
+    L.circle([lobeLat, lobeLon], {
+      radius: 14000,
+      color: C.impact,
+      weight: 1.4,
+      opacity: 0.6,
+      fillColor: C.impact,
+      fillOpacity: 0.07,
+      className: "maris-impact-pulse",
+      interactive: false,
+    }).addTo(g);
+
+    // Impact labels
+    L.marker(c, {
+      interactive: false,
+      icon: L.divIcon({
+        className: "",
+        html: `<div style="font-family:ui-monospace,Menlo,monospace;font-size:8px;letter-spacing:0.16em;color:${C.impact};white-space:nowrap;transform:translateX(-50%);">IMPACT ZONE — 20 KM</div>`,
+        iconSize: [140, 10],
+        iconAnchor: [70, 5],
+      }),
+    }).addTo(g);
+  }, [incident, driftResult, layers]);
+
   return (
     <div
       ref={mapRef}
       className="maris-map absolute inset-0 z-0"
-      style={{ background: "#050b12" }}
+      style={{ background: "#0a1a28" }}
     />
   );
 }

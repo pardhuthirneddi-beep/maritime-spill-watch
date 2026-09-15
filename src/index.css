@@ -254,6 +254,32 @@
   opacity: 0.6;
 }
 
+/* Esri bathymetric base — pulled toward command-center navy: cooler hue,
+   reduced brightness, gentle contrast so overlays stay dominant. */
+.maris-ocean {
+  filter: brightness(0.62) saturate(0.85) hue-rotate(-10deg) contrast(1.12);
+}
+
+/* Drift-direction arrows — subtle directional shimmer along flow lines. */
+.maris-flow {
+  animation: maris-flow-pulse 1.6s ease-in-out infinite;
+}
+@keyframes maris-flow-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* Impact-zone lobe — slow warning pulse. */
+.maris-impact-pulse {
+  animation: maris-impact-pulse 2.4s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+@keyframes maris-impact-pulse {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 0.45; }
+}
+
 /* Zoom-adaptive beacon suppression: hide pulsing rings when zoomed far out
    (screen-space rings overwhelm real geometry at low zoom). */
 .maris-z-far .maris-ping {
