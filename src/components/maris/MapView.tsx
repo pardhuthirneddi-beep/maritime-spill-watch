@@ -19,8 +19,9 @@ import type {
   VesselAttribution,
 } from "@/data/types";
 
-// CARTO basemap key (user-provided) — appended to tile requests so the
-// basemap never blocks on "API key required".
+// CARTO basemap key (user-provided). Must be passed as `key=` — that is the
+// parameter CARTO's raster endpoint actually honours (`api_key=` is ignored
+// and serves the "API key required" watermark tile).
 const CARTO_KEY = "cb1_3m6s_1_d1388429c63b760b35a7f30f";
 
 // Night-chart signal palette (mirrors index.css tokens)
@@ -263,30 +264,22 @@ export default function MapView({
       attributionControl: false,
     });
 
-    // Navy bathymetric base — Esri World Ocean Base (keyless, no token, no
-    // region lock). Blue-gradient bathymetry reads as a real ocean chart.
-    // CARTO dark sits UNDERNEATH as automatic fallback: if Esri tiles fail,
-    // the dark chart still shows through instead of a white map.
+    // Satellite-textured base — Esri World Imagery (keyless): real
+    // green/brown land textures and deep-blue ocean. Darkened toward navy
+    // via CSS so analytical overlays stay dominant, with the CARTO dark
+    // layer underneath as automatic fallback if Esri tiles fail.
     L.tileLayer(
-      `https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png?api_key=${CARTO_KEY}`,
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
       {
         maxZoom: 19,
-        className: "maris-base",
-        attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-      }
-    ).addTo(map);
-    L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
-      {
-        maxZoom: 13,
         className: "maris-ocean",
-        attribution: "Tiles &copy; Esri — Sources: GEBCO, NOAA, Ocean Basemap",
+        attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics",
       }
     ).addTo(map);
 
     // Muted place-name overlay for spatial reference.
     L.tileLayer(
-      `https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png?api_key=${CARTO_KEY}`,
+      `https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png?key=${CARTO_KEY}`,
       {
         maxZoom: 19,
         className: "maris-labels",
