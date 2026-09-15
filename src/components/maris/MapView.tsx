@@ -19,6 +19,10 @@ import type {
   VesselAttribution,
 } from "@/data/types";
 
+// CARTO basemap key (user-provided) — appended to tile requests so the
+// basemap never blocks on "API key required".
+const CARTO_KEY = "cb1_3m6s_1_d1388429c63b760b35a7f30f";
+
 // Night-chart signal palette (mirrors index.css tokens)
 const C = {
   suspect: "#fbbf24", // amber — rank-1 probable source candidate
@@ -263,11 +267,14 @@ export default function MapView({
     // region lock). Blue-gradient bathymetry reads as a real ocean chart.
     // CARTO dark sits UNDERNEATH as automatic fallback: if Esri tiles fail,
     // the dark chart still shows through instead of a white map.
-    L.tileLayer("https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      className: "maris-base",
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-    }).addTo(map);
+    L.tileLayer(
+      `https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png?api_key=${CARTO_KEY}`,
+      {
+        maxZoom: 19,
+        className: "maris-base",
+        attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+      }
+    ).addTo(map);
     L.tileLayer(
       "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
       {
@@ -278,10 +285,13 @@ export default function MapView({
     ).addTo(map);
 
     // Muted place-name overlay for spatial reference.
-    L.tileLayer("https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      className: "maris-labels",
-    }).addTo(map);
+    L.tileLayer(
+      `https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png?api_key=${CARTO_KEY}`,
+      {
+        maxZoom: 19,
+        className: "maris-labels",
+      }
+    ).addTo(map);
 
     L.control.zoom({ position: "topright" }).addTo(map);
     L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
