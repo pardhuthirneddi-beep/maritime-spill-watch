@@ -184,7 +184,7 @@ export default function AnalystPanel({
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
         {!hasConversation && (
           <div className="space-y-3">
-            <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
+            <div className="rounded border border-sky-200/10 bg-card/50 p-3">
               <div className="mb-1 flex items-center gap-2">
                 <Sparkles className="size-3 text-amber-300" />
                 <span className="text-[10px] font-semibold uppercase text-amber-300">
@@ -229,7 +229,7 @@ export default function AnalystPanel({
             className={cn(
               "rounded border p-2.5",
               m.role === "user"
-                ? "border-sky-200/10 bg-zinc-900/50"
+                ? "border-sky-200/10 bg-card/50"
                 : m.error
                   ? "border-red-500/30 bg-red-500/5"
                   : "border-amber-500/20 bg-amber-500/5",
@@ -314,7 +314,7 @@ export default function AnalystPanel({
                 : "Run an investigation to activate the analyst"
             }
             disabled={!hasSnapshot || isAnalyzing || isLoading}
-            className="max-h-24 flex-1 resize-none rounded border border-sky-200/10 bg-zinc-900/50 px-2.5 py-2 text-[11px] text-zinc-200 placeholder-zinc-600 outline-none transition-colors focus:border-amber-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+            className="max-h-24 flex-1 resize-none rounded border border-sky-200/10 bg-card/50 px-2.5 py-2 text-[11px] text-zinc-200 placeholder-zinc-600 outline-none transition-colors focus:border-amber-500/40 disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button
             onClick={() => void send(input)}
@@ -323,7 +323,7 @@ export default function AnalystPanel({
               "flex size-9 shrink-0 items-center justify-center rounded border transition-colors",
               input.trim() && !isLoading && !isAnalyzing && hasSnapshot
                 ? "cursor-pointer border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
-                : "cursor-not-allowed border-zinc-700 bg-zinc-800/50 text-zinc-600",
+                : "cursor-not-allowed border-zinc-700 bg-card/30 text-zinc-600",
             )}
             title="Send"
           >

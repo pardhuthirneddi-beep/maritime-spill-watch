@@ -353,7 +353,7 @@ export default function Dashboard() {
 
   const hasData = state.incident !== null;
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#050a12] text-zinc-100 overflow-hidden">
+    <div className="fixed inset-0 flex flex-col bg-background text-zinc-100 overflow-hidden">
       {/* Header */}        <Header
           incident={state.incident}
           activeView={activeView}
@@ -432,7 +432,7 @@ export default function Dashboard() {
 
           {/* Pre-investigation overlay */}
           {!hasData && !state.isAnalyzing && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#050a12]/70 backdrop-blur-sm">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 backdrop-blur-sm">
               <div className="text-center max-w-md">
                 <div className="flex justify-center mb-4">
                   <div className="flex size-16 items-center justify-center rounded-2xl border border-sky-200/10 bg-zinc-900">
@@ -482,7 +482,7 @@ export default function Dashboard() {
               dim/blur overlay so the map stays visible and interactive
               while the investigation pipeline runs. */}
           {state.isAnalyzing && (
-            <div className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full border border-sky-200/10 bg-[#070d16]/90 px-3 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm">
+            <div className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full border border-sky-200/10 nav-panel px-3 py-1.5 backdrop-blur-sm">
               <div className="size-3 rounded-full border-2 border-amber-500/30 border-t-amber-500 animate-spin" />
               <span className="text-[9px] text-zinc-300">{state.analysisStep}</span>
             </div>
@@ -502,7 +502,7 @@ export default function Dashboard() {
 
           {/* Map legend — mirrors actual map symbology */}
           {hasData && (
-            <div className="absolute bottom-3 left-3 z-10 rounded border border-sky-200/15 bg-[#070d16]/90 px-2.5 py-1.5 text-[8px] text-zinc-400 space-y-1 backdrop-blur-sm">
+            <div className="absolute bottom-3 left-3 z-10 rounded border border-sky-200/15 bg-card/50 px-2.5 py-1.5 text-[8px] text-zinc-400 space-y-1 backdrop-blur-sm">
               <div className="flex items-center gap-1.5">
                 <svg width="10" height="10" viewBox="0 0 24 24"><path d="M12 2.5 L19.5 21 L12 16.8 L4.5 21 Z" fill="#fbbf24"/></svg>
                 <span className="text-amber-300/90">Probable-source candidate</span>
@@ -566,7 +566,7 @@ function StatusBarRestorePill({
   return (
     <button
       onClick={onRestore}
-      className="pointer-events-auto absolute right-3 top-3 z-20 flex items-center gap-2 rounded border border-sky-200/10 bg-[#070d16]/95 px-2.5 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm transition-colors hover:border-sky-400/40"
+      className="pointer-events-auto absolute right-3 top-3 z-20 flex items-center gap-2 rounded border border-sky-200/10 nav-panel px-2.5 py-1.5 backdrop-blur-sm transition-colors hover:border-sky-400/40"
       title="Show incident status bar"
     >
       <span className="font-mono text-[9px] font-semibold text-zinc-300">

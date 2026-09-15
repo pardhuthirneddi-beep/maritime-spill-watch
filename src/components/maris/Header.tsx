@@ -31,7 +31,7 @@ export default function Header({
   onOpenIncident,
 }: HeaderProps) {
   return (
-    <header className="relative z-30 flex h-11 items-center justify-between border-b border-sky-200/10 bg-[#050a12] px-4">
+    <header className="relative z-30 flex h-11 items-center justify-between border-b border-sky-200/10 bg-background px-4">
       {/* Left: Incident info */}
       <div className="flex items-center gap-3">
         {incident ? (
@@ -170,7 +170,7 @@ function NotificationBell({
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-8 z-50 w-72 rounded border border-sky-200/10 bg-[#070d16]/97 shadow-xl shadow-black/50 backdrop-blur-sm">
+          <div className="absolute right-0 top-8 z-50 w-72 rounded border border-sky-200/10 nav-panel backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-sky-200/10 px-3 py-2">
               <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
                 Operational Notifications

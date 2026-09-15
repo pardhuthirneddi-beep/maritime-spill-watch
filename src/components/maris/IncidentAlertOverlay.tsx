@@ -51,7 +51,7 @@ export default function IncidentAlertOverlay({
 
   return (
     <div className="absolute right-3 top-[8.5rem] z-30 w-72 pointer-events-auto">
-      <div className="rounded border border-amber-500/40 bg-[#070d16]/97 shadow-xl shadow-black/50 backdrop-blur-sm">
+      <div className="rounded border border-amber-500/40 nav-panel backdrop-blur-sm">
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-amber-500/30 px-3 py-2">
           <span className="relative flex size-2">

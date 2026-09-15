@@ -50,7 +50,7 @@ export default function NotificationRail({
 
   return (
     <div className="absolute left-3 top-3 z-20 w-64 pointer-events-none">
-      <div className="pointer-events-auto rounded border border-sky-200/10 bg-[#070d16]/95 shadow-lg shadow-black/40 backdrop-blur-sm">
+      <div className="pointer-events-auto rounded border border-sky-200/10 nav-panel backdrop-blur-sm">
         {/* Header */}
         <button
           onClick={() => setExpanded((e) => !e)}

@@ -383,7 +383,7 @@ export default function SarViewer({ onBack }: SarViewerProps) {
             Open in 3D
           </button>
           {/* Zoom controls */}
-          <div className="flex items-center gap-0.5 rounded border border-sky-200/10 bg-zinc-900/50">
+          <div className="flex items-center gap-0.5 rounded border border-sky-200/10 bg-card/50">
             <button onClick={handleZoomOut} className="p-1 text-zinc-500 hover:text-zinc-300">
               <ZoomOut className="size-3" />
             </button>

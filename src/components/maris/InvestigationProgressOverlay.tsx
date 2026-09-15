@@ -64,7 +64,7 @@ export function InvestigationProgressOverlay({
     return (
       <button
         onClick={() => setMode("open")}
-        className="pointer-events-auto absolute left-3 top-3 z-20 flex items-center gap-2 rounded border border-sky-200/10 bg-[#070d16]/95 px-2.5 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm transition-colors hover:border-sky-400/40"
+        className="pointer-events-auto absolute left-3 top-3 z-20 flex items-center gap-2 rounded border border-sky-200/10 nav-panel px-2.5 py-1.5 backdrop-blur-sm transition-colors hover:border-sky-400/40"
         title="Reopen investigation progress"
       >
         {running ? (
@@ -88,7 +88,7 @@ export function InvestigationProgressOverlay({
   if (mode === "minimized") {
     const step = currentStepLabel(wf, complete);
     return (
-      <div className="pointer-events-auto absolute left-3 top-3 z-20 flex w-56 items-center gap-2 rounded border border-sky-200/10 bg-[#070d16]/95 px-2.5 py-1.5 shadow-lg shadow-black/40 backdrop-blur-sm">
+      <div className="pointer-events-auto absolute left-3 top-3 z-20 flex w-56 items-center gap-2 rounded border border-sky-200/10 nav-panel px-2.5 py-1.5 backdrop-blur-sm">
         {running && (
           <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />
         )}
@@ -125,7 +125,7 @@ export function InvestigationProgressOverlay({
 
   // ── OPEN: compact floating panel ───────────────────────────────────
   return (
-    <div className="pointer-events-auto absolute left-3 top-3 z-20 w-60 max-w-[calc(100vw-6rem)] rounded border border-sky-200/10 bg-[#070d16]/95 shadow-lg shadow-black/40 backdrop-blur-sm">
+    <div className="pointer-events-auto absolute left-3 top-3 z-20 w-60 max-w-[calc(100vw-6rem)] rounded border border-sky-200/10 nav-panel backdrop-blur-sm">
       {/* Header: title + pct + minimize/close */}
       <div className="flex items-center gap-2 border-b border-sky-200/10 px-2.5 py-1.5">
         <Compass className="size-3 shrink-0 text-amber-400" />

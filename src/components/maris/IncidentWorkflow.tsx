@@ -59,7 +59,7 @@ export function IncidentStatusBar({
   const ready = wf.reportGenerated && !complete;
 
   return (
-    <div className="pointer-events-auto rounded border border-sky-200/10 bg-[#070d16]/95 shadow-lg shadow-black/40 backdrop-blur-sm">
+    <div className="pointer-events-auto rounded border border-sky-200/10 nav-panel backdrop-blur-sm">
       {/* Row 1: identity + status */}
       <div className="flex items-center gap-2 border-b border-sky-200/10 px-3 py-1.5">
         <span className="font-mono text-[11px] font-semibold text-zinc-100">
@@ -237,7 +237,7 @@ export function InvestigationProgressPanel({
 }) {
   if (!incident) {
     return (
-      <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3 text-[10px] text-zinc-600">
+      <div className="rounded border border-sky-200/10 bg-card/50 p-3 text-[10px] text-zinc-600">
         No active incident — run an investigation to begin.
       </div>
     );
@@ -248,7 +248,7 @@ export function InvestigationProgressPanel({
   const complete = investigationComplete(wf);
 
   return (
-    <div className="rounded border border-sky-200/10 bg-zinc-900/50 p-3">
+    <div className="rounded border border-sky-200/10 bg-card/50 p-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Compass className="size-3.5 text-amber-400" />
