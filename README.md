@@ -1,3 +1,21 @@
+## MARIS checkpoint / restore (safety net)
+
+The project state can be snapshotted and rolled back without git:
+
+```bash
+# Save a checkpoint of the current state (timestamped archive in backups/)
+tar --exclude='node_modules' --exclude='.git' --exclude='.convex' \
+    --exclude='.vly-run' --exclude='dist' --exclude='backups' \
+    -czf "backups/maris-checkpoint-$(date +%Y%m%d-%H%M).tar.gz" .
+
+# Restore the latest checkpoint (auto-saves the current state first)
+bash scripts/restore-maris-checkpoint.sh
+```
+
+Latest checkpoint: `backups/maris-checkpoint-20260915-1409.tar.gz` — saved after the
+AIS movement / replay clock / navigation-crash fixes, with all 5 investigation vessels
+and the 468-vessel fleet moving correctly and typecheck passing.
+
 ## Overview
 
 This project uses the following tech stack:
