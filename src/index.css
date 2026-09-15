@@ -242,23 +242,16 @@
   padding: 2px 8px;
 }
 
-/* Basemap layers.
-   - maris-ocean: Esri bathymetry inverted to a dark chart (land reads light,
-     ocean deep-navy, depth contours stay crisp) — the classic nautical-dark
-     technique, tuned so cartographic ink stays legible.
-   - maris-fallback: CARTO dark base underneath in case ocean tiles fail.
-   - maris-ocean-ref: chart reference labels, heavily muted. */
-.maris-ocean {
-  filter: invert(1) hue-rotate(185deg) brightness(0.92) contrast(0.92) saturate(0.8);
-  mix-blend-mode: screen;
+/* Basemap layers — CARTO Dark Matter stack.
+   - maris-base: dark no-labels base, dimmed/desaturated so it never competes
+     with the analytical overlays.
+   - maris-labels: place-name overlay, kept very quiet. */
+.maris-base {
+  filter: brightness(0.78) saturate(0.55) contrast(1.05);
 }
-.maris-fallback {
-  filter: brightness(0.85) saturate(0.6);
-}
-.maris-ocean-ref {
-  filter: invert(1) hue-rotate(185deg) brightness(0.7) contrast(0.85) saturate(0.4);
-  opacity: 0.5;
-  mix-blend-mode: screen;
+.maris-labels {
+  filter: brightness(0.75) saturate(0.4);
+  opacity: 0.6;
 }
 
 /* Zoom-adaptive beacon suppression: hide pulsing rings when zoomed far out

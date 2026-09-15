@@ -158,34 +158,19 @@ export default function MapView({
       attributionControl: false,
     });
 
-    // Fallback dark base (also the "sea" when tiles fail) — no labels, no clutter.
+    // Dark chart base — CARTO Dark Matter (no labels), keyless and
+    // region-independent. Analysis overlays carry all the color.
     L.tileLayer("https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      className: "maris-fallback",
+      className: "maris-base",
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
     }).addTo(map);
 
-    // Bathymetric chart base, inverted to dark: depth contours + coastlines
-    // stay legible on the night palette. maxNativeZoom 13 → Leaflet upscales.
-    L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
-      {
-        maxZoom: 19,
-        maxNativeZoom: 13,
-        className: "maris-ocean",
-        attribution: "Esri, GEBCO, NOAA",
-      }
-    ).addTo(map);
-
-    // Chart reference overlay (ocean names / boundaries), subtle.
-    L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}",
-      {
-        maxZoom: 19,
-        maxNativeZoom: 13,
-        className: "maris-ocean-ref",
-        opacity: 0.55,
-      }
-    ).addTo(map);
+    // Muted place-name overlay for spatial reference.
+    L.tileLayer("https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      className: "maris-labels",
+    }).addTo(map);
 
     L.control.zoom({ position: "topright" }).addTo(map);
     L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
