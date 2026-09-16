@@ -241,7 +241,10 @@ const OPEN_OCEAN_LANES: Corridor[] = [
   },
   {
     name: "Indian Ocean north crossing",
-    waypoints: [[12.0, 65.0], [10.0, 72.0], [7.0, 82.0], [5.5, 90.0]],
+    // Routed SOUTH of Sri Lanka through the Ten Degree Channel — the
+    // previous chain ((10,72)→(7,82)→(5.5,90)) clipped the Palk Strait
+    // region and put centerline vessels on/near Sri Lanka.
+    waypoints: [[12.0, 65.0], [10.0, 72.0], [6.0, 79.0], [5.2, 84.5], [5.5, 90.0]],
     count: 7, speedKn: [10, 18],
   },
   {
@@ -296,6 +299,37 @@ function pickType(rand: () => number): string {
     if (roll <= 0) return name;
   }
   return TYPE_NAMES[0];
+}
+
+// ─── ROUTE-END EXTENSION LIMITS ──────────────────────────────────────
+// Vessels continue past their route ends on the end leg's bearing. To keep
+// that extension over OPEN WATER, each vessel gets a per-end cap measured
+// against the land/water mask at fleet-build time: the extension path is
+// sampled and capped short of the first land contact. Without a cap, lanes
+// ending offshore (e.g. Mumbai–Kochi coastal, bearing ~205°) run vessels
+// straight across Sri Lanka / the coast beyond.
+const MAX_ROUTE_EXTENSION_M = 300_000;
+const NO_MASK_EXTENSION_M = 100_000; // bounded fallback when mask unavailable
+const EXTENSION_SAMPLE_M = 5_000;
+const EXTENSION_SAFETY_M = 15_000; // hold short of the coastline
+
+/** How far along `brg` from `from` the path stays over water (0 if the
+ * immediate next sample is land). Requires the water mask (build-time). */
+function waterExtensionCapM(
+  from: [number, number],
+  brg: number,
+): number {
+  let lastWater = 0;
+  for (
+    let d = EXTENSION_SAMPLE_M;
+    d <= MAX_ROUTE_EXTENSION_M;
+    d += EXTENSION_SAMPLE_M
+  ) {
+    const [lat, lon] = destinationPoint(from[0], from[1], brg, d);
+    if (!isWater(lat, lon)) break;
+    lastWater = d;
+  }
+  return Math.max(0, lastWater - EXTENSION_SAFETY_M);
 }
 
 // ─── WATER-SAFE ROUTE VALIDATION ─────────────────────────────────────
@@ -357,6 +391,11 @@ export interface SimVessel {
   offsetM: number;
   /** Route direction: +1 or −1 (some ships sail the reverse lane). */
   dir: 1 | -1;
+  /** Max extension past the route START (m) that stays over water —
+   * water-mask-validated at fleet build. Vessels hold position beyond it. */
+  extendStartM: number;
+  /** Max extension past the route END (m) that stays over water. */
+  extendEndM: number;
   /** Anchor drift only (sim time at which the vessel drops anchor, or ∞). */
   anchorAtMs: number | null;
   anchorPos: [number, number] | null;
@@ -469,6 +508,21 @@ function buildFleet(): void {
       // Some vessels travel the reverse direction (separation lanes).
       const dir: 1 | -1 = rand() < 0.5 ? 1 : -1;
 
+      // Water-validated extension caps for both route ends (direction-
+      // independent: the start cap validates from route[0] on the bearing
+      // of the incoming leg, the end cap from route[n-1] on the outbound
+      // leg). Vessels extending past an end hold position at the cap
+      // instead of crossing whatever coastline lies beyond the lane.
+      const nR = route.length;
+      const startInBrg = bearingDeg(route[1][0], route[1][1], route[0][0], route[0][1]);
+      const endOutBrg = bearingDeg(route[nR - 2][0], route[nR - 2][1], route[nR - 1][0], route[nR - 1][1]);
+      const extendStartM = waterAvailable
+        ? waterExtensionCapM(route[0], startInBrg)
+        : NO_MASK_EXTENSION_M;
+      const extendEndM = waterAvailable
+        ? waterExtensionCapM(route[nR - 1], endOutBrg)
+        : NO_MASK_EXTENSION_M;
+
       // ~12% of the fleet anchors (e.g. waiting at anchorage) — realistic.
       const anchored = rand() < 0.12;
       const anchorProgress = rand();
@@ -485,6 +539,8 @@ function buildFleet(): void {
         speedMs: speedKn * 0.5144,
         offsetM: rand() * lenV,
         dir,
+        extendStartM,
+        extendEndM,
         anchorAtMs: anchored ? anchorProgress * lenV : null,
         anchorPos: null,
       });
@@ -565,10 +621,14 @@ export function positionAt(v: SimVessel, tMs: number, epochMs: number): SimPosit
   // assigned speed. The missing /1000 was the original "timelapse" bug:
   // milliseconds×(m/s) moved every vessel 1000× too fast.
   const dist = v.offsetM + ((tMs - epochMs) / 1000) * v.speedMs;
-  // dir=1 travels start→end; dir=-1 travels end→start. No clamping — past
-  // either end, pointAlongRoute extends along that end leg's bearing, so
-  // the vessel simply keeps sailing its course (no wrap, no teleport).
-  const along = v.dir === 1 ? dist : v.routeLength - dist;
+  // dir=1 travels start→end; dir=-1 travels end→start. Past either end the
+  // vessel continues on that end leg's bearing — but never beyond its
+  // water-validated extension cap (it holds position at the far edge of
+  // open water instead of crossing coastlines beyond the lane).
+  const along = Math.min(
+    v.routeLength + v.extendEndM,
+    Math.max(-v.extendStartM, v.dir === 1 ? dist : v.routeLength - dist),
+  );
   const pos = pointAlongRoute(v, along);
   const brg = bearingAlongRoute(v, along);
   return { lat: pos[0], lon: pos[1], headingDeg: brg, speedKn: (v.speedMs / 0.5144) };
@@ -580,8 +640,10 @@ export function positionAt(v: SimVessel, tMs: number, epochMs: number): SimPosit
  * no teleport, no speed change). */
 function pointAlongRoute(v: SimVessel, along: number): [number, number] {
   if (along < 0) {
+    // Beyond the START: opposite side of route[1] (bearing +180), so the
+    // vessel genuinely sits before its route — never doubled onto leg 1.
     const brg = bearingDeg(v.route[0][0], v.route[0][1], v.route[1][0], v.route[1][1]);
-    return destinationPoint(v.route[0][0], v.route[0][1], brg, -along);
+    return destinationPoint(v.route[0][0], v.route[0][1], (brg + 180) % 360, -along);
   }
   if (along > v.routeLength) {
     const n = v.route.length;
