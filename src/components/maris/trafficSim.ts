@@ -560,11 +560,15 @@ export function positionAt(v: SimVessel, tMs: number, epochMs: number): SimPosit
     const brg = bearingAlongRoute(v, 0);
     return { lat: p[0], lon: p[1], headingDeg: brg, speedKn: v.speedMs / 0.5144 };
   }
-  const dist = v.offsetM + (tMs - epochMs) * v.speedMs;
-  const along =
-    v.dir === 1
-      ? dist
-      : Math.max(0, v.routeLength - dist);
+  // Units: tMs/epochMs are milliseconds; speedMs is metres/SECOND.
+  // distance = offset + speed × elapsed-sim-seconds — the vessel's TRUE
+  // assigned speed. The missing /1000 was the original "timelapse" bug:
+  // milliseconds×(m/s) moved every vessel 1000× too fast.
+  const dist = v.offsetM + ((tMs - epochMs) / 1000) * v.speedMs;
+  // dir=1 travels start→end; dir=-1 travels end→start. No clamping — past
+  // either end, pointAlongRoute extends along that end leg's bearing, so
+  // the vessel simply keeps sailing its course (no wrap, no teleport).
+  const along = v.dir === 1 ? dist : v.routeLength - dist;
   const pos = pointAlongRoute(v, along);
   const brg = bearingAlongRoute(v, along);
   return { lat: pos[0], lon: pos[1], headingDeg: brg, speedKn: (v.speedMs / 0.5144) };
