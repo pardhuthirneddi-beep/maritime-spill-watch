@@ -8,6 +8,7 @@
 // only saturated elements.
 import { useEffect, useRef, useCallback } from "react";
 import L from "leaflet";
+import { createMarisImageryTileLayer } from "./marisImageryTileLayer";
 import "leaflet/dist/leaflet.css";
 import type {
   OilSpillIncident,
@@ -268,20 +269,23 @@ export default function MapView({
     // green/brown land textures and deep-blue ocean. Darkened toward navy
     // via CSS so analytical overlays stay dominant, with the CARTO dark
     // layer underneath as automatic fallback if Esri tiles fail.
-    L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      {
-        maxZoom: 19,
-        className: "maris-ocean",
-        attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics",
-      }
-    ).addTo(map);
+    // Uses the ocean-aware layer so Esri's "Map data not available"
+    // placeholder (no imagery over open ocean > z13, and z19+ everywhere)
+    // is replaced by the nearest real ancestor tile — identical visuals,
+    // and close-zoom over ocean renders upscaled real pixels instead.
+    createMarisImageryTileLayer({
+      className: "maris-ocean",
+      attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics",
+    }).addTo(map);
 
     // Muted place-name overlay for spatial reference.
+    // maxNativeZoom keeps CARTO's real label tiles past the source's native
+    // resolution (overzoom) instead of requesting empty deep-zoom tiles.
     L.tileLayer(
       `https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png?key=${CARTO_KEY}`,
       {
-        maxZoom: 19,
+        maxNativeZoom: 19,
+        maxZoom: 21,
         className: "maris-labels",
       }
     ).addTo(map);
