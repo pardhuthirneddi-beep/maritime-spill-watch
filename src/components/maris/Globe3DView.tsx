@@ -45,6 +45,7 @@ import {
   positionAt as replayPositionAt,
   replayEndMs,
   replayStartMs,
+  travelledPath,
 } from "@/data/temporalReplay";
 
 // ─── CESIUM SETUP ────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ const COLOR_CORRIDOR = Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.8)
 const COLOR_VESSEL_SEL = Cesium.Color.fromCssColorString("#22d3ee");
 const COLOR_TRACK = Cesium.Color.fromCssColorString("#60a5fa").withAlpha(0.55);
 const COLOR_TRACK_SEL = Cesium.Color.fromCssColorString("#22d3ee");
+const COLOR_TRACK_SOLID = Cesium.Color.fromCssColorString("#93c5fd").withAlpha(0.9);
 const COLOR_SAR = Cesium.Color.fromCssColorString("#e2e8f0").withAlpha(0.22);
 
 // ─── WORKSTATION CHROME ──────────────────────────────────────────────
@@ -593,6 +595,7 @@ export default function Globe3DView({
         const positions = v.trajectory.map(([lat, lon]) =>
           Cesium.Cartesian3.fromDegrees(lon, lat),
         );
+        // FUTURE/PREDICTED path: the full recorded trajectory, dashed.
         ds.entities.add({
           polyline: {
             positions,
@@ -600,6 +603,31 @@ export default function Globe3DView({
             material: sel
               ? COLOR_TRACK_SEL
               : new Cesium.PolylineDashMaterialProperty({ color: COLOR_TRACK }),
+            clampToGround: true,
+          },
+        });
+        // TRAVELLED path: grows progressively with the sim clock — every
+        // fix the clock has passed plus the vessel's live position (same
+        // pure trajectory function the symbols use). Sampled per frame via
+        // the ref; no entity rebuilds, no 5 Hz React involvement.
+        ds.entities.add({
+          polyline: {
+            positions: new Cesium.CallbackProperty(() => {
+              const pts = travelledPath(v, simMsRef.current);
+              const cartos = pts.map(([lat, lon]) =>
+                Cesium.Cartesian3.fromDegrees(lon, lat),
+              );
+              // Degenerate before the first fix: back-date one short sample
+              // so the polyline stays valid while showing ~zero travelled
+              // path (the segment is the last ~30 s of motion).
+              if (cartos.length < 2) {
+                const p1 = replayPositionAt(v, simMsRef.current - 30_000);
+                cartos.push(Cesium.Cartesian3.fromDegrees(p1.lon, p1.lat));
+              }
+              return cartos;
+            }, false),
+            width: sel ? 2.8 : 1.8,
+            material: sel ? COLOR_TRACK_SEL : COLOR_TRACK_SOLID,
             clampToGround: true,
           },
         });

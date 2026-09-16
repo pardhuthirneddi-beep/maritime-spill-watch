@@ -9,6 +9,37 @@ import { geodesicDistanceKm, interpolateLatLon } from "./geo";
 const AREA_CENTER: [number, number] = [12.047, 86.972];
 const AREA_RADIUS_KM = 8;
 
+/** Initial bearing a→b (degrees, 0-360). */
+function initialBearingDeg(a: [number, number], b: [number, number]): number {
+  const φ1 = (a[0] * Math.PI) / 180;
+  const φ2 = (b[0] * Math.PI) / 180;
+  const Δλ = ((b[1] - a[1]) * Math.PI) / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Dead-reckon from a fix along a bearing at the vessel's own speed.
+ * Negative dtMs moves backwards along the bearing (before the fix).
+ * Flat-earth over the short extrapolation ranges involved (< 40 km).
+ */
+function deadReckon(
+  fix: [number, number],
+  bearingDeg: number,
+  speedKn: number,
+  dtMs: number,
+): [number, number] {
+  const distM = speedKn * 0.5144 * (dtMs / 1000);
+  const θ = (bearingDeg * Math.PI) / 180;
+  const lat = fix[0] + (distM * Math.cos(θ)) / 111_320;
+  const lon =
+    fix[1] +
+    (distM * Math.sin(θ)) / (111_320 * Math.cos((fix[0] * Math.PI) / 180));
+  return [lat, lon];
+}
+
 /** Replay window start (first AIS fix across all vessels). */
 export function replayStartMs(vessels: AisVessel[]): number {
   return Math.min(
@@ -34,23 +65,33 @@ export function positionAt(v: AisVessel, tMs: number): TemporalPosition {
   const traj = v.trajectory;
 
   if (tMs <= ts[0]) {
+    // BEFORE the first fix: dead-reckon backwards along the inbound leg at
+    // the vessel's own speed — it was under way before its first record.
+    // This is what lets ALL candidates move from the replay window's very
+    // first instant (T+0) instead of sitting frozen until their first fix.
+    const brg = initialBearingDeg(traj[0], traj[1]);
+    const p = deadReckon(traj[0], brg, v.speed, tMs - ts[0]);
     return {
-      lat: traj[0][0],
-      lon: traj[0][1],
-      headingDeg: v.heading,
+      lat: p[0],
+      lon: p[1],
+      headingDeg: brg,
       speedKn: v.speed,
-      inArea: geodesicDistanceKm(traj[0], AREA_CENTER) <= AREA_RADIUS_KM,
+      inArea: geodesicDistanceKm(p, AREA_CENTER) <= AREA_RADIUS_KM,
       fixIndex: 0,
     };
   }
   if (tMs >= ts[ts.length - 1]) {
+    // AFTER the last fix: continue on the final course at the same speed —
+    // the vessel keeps sailing; the trajectory never "ends" mid-ocean.
     const last = traj.length - 1;
+    const brg = initialBearingDeg(traj[last - 1], traj[last]);
+    const p = deadReckon(traj[last], brg, v.speed, tMs - ts[ts.length - 1]);
     return {
-      lat: traj[last][0],
-      lon: traj[last][1],
-      headingDeg: v.heading,
+      lat: p[0],
+      lon: p[1],
+      headingDeg: brg,
       speedKn: v.speed,
-      inArea: geodesicDistanceKm(traj[last], AREA_CENTER) <= AREA_RADIUS_KM,
+      inArea: geodesicDistanceKm(p, AREA_CENTER) <= AREA_RADIUS_KM,
       fixIndex: last,
     };
   }
@@ -83,6 +124,26 @@ export function positionAt(v: AisVessel, tMs: number): TemporalPosition {
     inArea: geodesicDistanceKm(p, AREA_CENTER) <= AREA_RADIUS_KM,
     fixIndex: i,
   };
+}
+
+/**
+ * The TRAVELLED portion of a vessel's trajectory at sim time `tMs`:
+ * every fix the clock has passed, plus the vessel's exact current position
+ * (dead-reckoned between/around fixes at its own speed). The future portion
+ * is NOT included — the travelled path grows progressively with the clock.
+ * Pure function; same trajectory data, no extra state.
+ */
+export function travelledPath(v: AisVessel, tMs: number): [number, number][] {
+  const ts = v.timestamps.map((s) => Date.parse(s));
+  const traj = v.trajectory;
+  const pts: [number, number][] = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (ts[i] <= tMs) pts.push(traj[i]);
+    else break;
+  }
+  const p = positionAt(v, tMs);
+  pts.push([p.lat, p.lon]);
+  return pts;
 }
 
 /** Build the frame at a specific time — pure function, no state. */

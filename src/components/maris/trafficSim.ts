@@ -537,7 +537,9 @@ export function prepareFleet(): Promise<void> {
  */
 export function positionAt(v: SimVessel, tMs: number, epochMs: number): SimPosition {
   // Anchor: vessel sits at its anchorage position (tiny drift), still AIS-
-  // visible — realistic harbor behavior.
+  // visible — realistic harbor behavior. Once the sim clock advances past
+  // the anchor point the vessel stays anchored (progress clamps) instead of
+  // wrapping around the route loop.
   if (v.anchorAtMs !== null) {
     const along = v.anchorAtMs;
     const p = pointAlongRoute(v, along);
@@ -548,16 +550,46 @@ export function positionAt(v: SimVessel, tMs: number, epochMs: number): SimPosit
     return { lat, lon, headingDeg: brg, speedKn: 0.3 };
   }
 
-  const dist = (v.offsetM + (tMs - epochMs) * v.speedMs) % v.routeLength;
-  const along = v.dir === 1 ? dist : v.routeLength - dist;
+  // Progress WITHOUT wrapping: distance = offset + speed × sim-elapsed.
+  // The modulo that previously looped vessels back to their route start
+  // (a teleport across the whole corridor) is gone — when a vessel passes
+  // its route end it simply continues on its final course (natural lane
+  // extension). routeLength = 0 is degenerate; clamp to stay at the origin.
+  if (v.routeLength <= 0) {
+    const p = pointAlongRoute(v, 0);
+    const brg = bearingAlongRoute(v, 0);
+    return { lat: p[0], lon: p[1], headingDeg: brg, speedKn: v.speedMs / 0.5144 };
+  }
+  const dist = v.offsetM + (tMs - epochMs) * v.speedMs;
+  const along =
+    v.dir === 1
+      ? dist
+      : Math.max(0, v.routeLength - dist);
   const pos = pointAlongRoute(v, along);
   const brg = bearingAlongRoute(v, along);
   return { lat: pos[0], lon: pos[1], headingDeg: brg, speedKn: (v.speedMs / 0.5144) };
 }
 
-/** Geographic position at distance `along` meters along the route. */
+/** Geographic position at distance `along` meters along the route.
+ * Accepts out-of-range values: beyond either end the vessel continues on
+ * the bearing of the first/last leg (a natural lane extension — no wrap,
+ * no teleport, no speed change). */
 function pointAlongRoute(v: SimVessel, along: number): [number, number] {
-  const d = ((along % v.routeLength) + v.routeLength) % v.routeLength;
+  if (along < 0) {
+    const brg = bearingDeg(v.route[0][0], v.route[0][1], v.route[1][0], v.route[1][1]);
+    return destinationPoint(v.route[0][0], v.route[0][1], brg, -along);
+  }
+  if (along > v.routeLength) {
+    const n = v.route.length;
+    const brg = bearingDeg(v.route[n - 2][0], v.route[n - 2][1], v.route[n - 1][0], v.route[n - 1][1]);
+    return destinationPoint(
+      v.route[n - 1][0],
+      v.route[n - 1][1],
+      brg,
+      along - v.routeLength,
+    );
+  }
+  const d = along;
   // Find leg
   let i = 0;
   while (i < v.legStart.length - 2 && v.legStart[i + 1] < d) i++;
@@ -568,18 +600,33 @@ function pointAlongRoute(v: SimVessel, along: number): [number, number] {
   return [aLat + (bLat - aLat) * frac, aLon + (bLon - aLon) * frac];
 }
 
-/** Course bearing at distance `along` meters along the route. */
+/** Course bearing at distance `along` meters along the route. Beyond the
+ * route ends the bearing of the first/last leg continues to apply. */
 function bearingAlongRoute(v: SimVessel, along: number): number {
-  const d = ((along % v.routeLength) + v.routeLength) % v.routeLength;
-  let i = 0;
-  while (i < v.legStart.length - 2 && v.legStart[i + 1] < d) i++;
-  const [aLat, aLon] = v.route[i];
-  const [bLat, bLon] = v.route[i + 1];
-  const brg = bearingDeg(aLat, aLon, bLat, bLon);
+  let brg: number;
+  if (along < 0) {
+    brg = bearingDeg(v.route[0][0], v.route[0][1], v.route[1][0], v.route[1][1]);
+  } else if (along > v.routeLength) {
+    const n = v.route.length;
+    brg = bearingDeg(
+      v.route[n - 2][0],
+      v.route[n - 2][1],
+      v.route[n - 1][0],
+      v.route[n - 1][1],
+    );
+  } else {
+    const d = along;
+    let i = 0;
+    while (i < v.legStart.length - 2 && v.legStart[i + 1] < d) i++;
+    const [aLat, aLon] = v.route[i];
+    const [bLat, bLon] = v.route[i + 1];
+    brg = bearingDeg(aLat, aLon, bLat, bLon);
+  }
   return v.dir === 1 ? brg : (brg + 180) % 360;
 }
 
-/** Recent-track trail points for a vessel (limited window). */
+/** Recent-track trail points for a vessel (limited window). Samples run
+ * oldest → newest so polyline vertices are in travel order. */
 export function trailPoints(
   v: SimVessel,
   tMs: number,
