@@ -31,7 +31,7 @@ const DISCLAIMER =
 
 export function generateJsonReport(data: ReportData): string {
   const report = {
-    reportType: "maris Investigation Report",
+    reportType: "MARIS Investigation Report",
     generatedAt: new Date().toISOString(),
     disclaimer: DISCLAIMER,
     incident: data.incident,
@@ -98,7 +98,7 @@ export function generatePdfReport(data: ReportData): jsPDF {
   // Header
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.text("maris", margin, y);
+  doc.text("MARIS", margin, y);
   y += 7;
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
