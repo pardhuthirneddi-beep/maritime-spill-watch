@@ -20,8 +20,10 @@ import {
   Layers,
   ArrowLeft,
   Search,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import SarUploadAnalysis from "./SarUploadAnalysis";
 import {
   DEMO_SAR_SCENE,
   DEMO_SAR_DETECTIONS,
@@ -209,6 +211,9 @@ function drawDetectionOverlay(
 
 export default function SarViewer({ onBack }: SarViewerProps) {
   const navigate = useNavigate();
+  // Workstation mode: "demo" = preinstalled demonstration scene (unchanged);
+  // "upload" = real user-provided SAR processing via the detection pipeline.
+  const [workstationMode, setWorkstationMode] = useState<"demo" | "upload">("demo");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showOverlay, setShowOverlay] = useState(true);
@@ -350,6 +355,41 @@ export default function SarViewer({ onBack }: SarViewerProps) {
   const handleZoomOut = () => setZoom((prev) => Math.max(0.5, prev / 1.2));
   const handleResetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
+  // ── Workstation mode switch (shared by both views) ─────────────
+  // Created before the early return so both mode states are styled here.
+  const modeSwitch = (
+    <div className="flex items-center rounded border border-sky-200/10 bg-card/50 p-0.5">
+      <button
+        onClick={() => setWorkstationMode("demo")}
+        className={cn(
+          "rounded px-2 py-0.5 text-[9px] font-medium transition-colors",
+          workstationMode === "demo"
+            ? "bg-sky-500/15 text-sky-300"
+            : "text-zinc-500 hover:text-zinc-300"
+        )}
+      >
+        Demo Incident
+      </button>
+      <button
+        onClick={() => setWorkstationMode("upload")}
+        className={cn(
+          "flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-medium transition-colors",
+          workstationMode === "upload"
+            ? "bg-amber-500/15 text-amber-300"
+            : "text-zinc-500 hover:text-zinc-300"
+        )}
+      >
+        <Upload className="size-2.5" />
+        Test with SAR Image
+      </button>
+    </div>
+  );
+
+  // ── Test-with-SAR-image mode: the real upload/processing workstation.
+  if (workstationMode === "upload") {
+    return <SarUploadAnalysis onBack={() => setWorkstationMode("demo")} modeToggle={modeSwitch} />;
+  }
+
   return (
     <div className="fixed inset-0 flex flex-col bg-[#08090c] text-zinc-100 overflow-hidden">
       {/* ─── TOP BAR ─────────────────────────────────────────────── */}
@@ -366,6 +406,8 @@ export default function SarViewer({ onBack }: SarViewerProps) {
           <span className="text-[10px] font-semibold tracking-[0.15em] text-zinc-300 uppercase">
             SAR Imagery Analysis
           </span>
+          <div className="h-4 w-px bg-zinc-800" />
+          {modeSwitch}
           <div className="h-4 w-px bg-zinc-800" />
           <span className="text-[9px] font-mono text-zinc-600">
             {scene.sceneId.substring(0, 30)}…
