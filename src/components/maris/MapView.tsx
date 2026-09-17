@@ -6,7 +6,7 @@
 // underneath as automatic fallback if Esri tiles fail to load, so the chart
 // is never white or blank. Analysis overlays (slick, drift, vessels) are the
 // only saturated elements.
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import L from "leaflet";
 import { createMarisImageryTileLayer } from "./marisImageryTileLayer";
 import "leaflet/dist/leaflet.css";
@@ -249,6 +249,7 @@ export default function MapView({
     tracks: L.LayerGroup;
     drift: L.LayerGroup;
     environmental: L.LayerGroup;
+    envWind: L.LayerGroup;
     thickness: L.LayerGroup;
     impact: L.LayerGroup;
     optical: L.LayerGroup;
@@ -350,6 +351,7 @@ export default function MapView({
       tracks: L.layerGroup().addTo(map),
       drift: L.layerGroup().addTo(map),
       environmental: L.layerGroup().addTo(map),
+      envWind: L.layerGroup().addTo(map),
       thickness: L.layerGroup().addTo(map),
       impact: L.layerGroup().addTo(map),
       optical: L.layerGroup().addTo(map),
@@ -376,7 +378,7 @@ export default function MapView({
       tracks: layersRef.current.tracks,
       driftForward: layersRef.current.drift,
       driftBacktrack: layersRef.current.drift,
-      wind: layersRef.current.environmental,
+      wind: layersRef.current.envWind,
       currents: layersRef.current.environmental,
       thickness: layersRef.current.thickness,
       impactZone: layersRef.current.impact,
@@ -698,172 +700,170 @@ export default function MapView({
     }
   }, [driftResult, layers]);
 
-  // Environmental layers — flowing streamfield. Curved streamlines traced
-  // through a smooth vector field (coherent curl, no grid of dead arrows),
-  // with animated chevron particles showing direction of flow.
+  // Environmental fields redraw when the zoom changes (see zoom listener
+  // below) so vector barbs keep a constant pixel size at every zoom level.
+  const [envZoomTick, setEnvZoomTick] = useState(0);
+
+  // Environmental layers — professional vector fields, one per layer.
+  // Wind and Ocean Current are computed and drawn INDEPENDENTLY (separate
+  // layer groups, separate seeds, separate field parameters) so toggling
+  // one never affects the other.
   useEffect(() => {
     if (!layersRef.current) return;
-    const g = layersRef.current.environmental;
-    g.clearLayers();
+    const gCur = layersRef.current.environmental;
+    const gWind = layersRef.current.envWind;
+    gCur.clearLayers();
+    gWind.clearLayers();
 
-    const windEnabled = layers.find((l) => l.id === "wind" && l.enabled);
-    const currentEnabled = layers.find((l) => l.id === "currents" && l.enabled);
+    const windEnabled = !!layers.find((l) => l.id === "wind" && l.enabled);
+    const currentEnabled = !!layers.find((l) => l.id === "currents" && l.enabled);
     if ((!windEnabled && !currentEnabled) || !incident) return;
 
     const cx = incident.polygon.center[0];
     const cy = incident.polygon.center[1];
-    const R = 0.14; // field extent in degrees (~15 km radius)
+    const zoom = mapInstance.current?.getZoom() ?? 11;
+    const z = Math.max(0, Math.min(14, zoom));
 
-    // Vector field: dominant direction + sinusoidal curl across space.
-    // strength ∈ [0.36, 1] modulates opacity/particle spacing (speed proxy).
-    const field = (
-      lat: number,
-      lon: number,
-      dirDeg: number,
-      curl: number,
-      wave: number
-    ): { dir: number; strength: number } => {
-      const u = (lon - cy) / R; // -1..1 across the field
-      const v = (lat - cx) / R;
-      const dir = dirDeg + curl * Math.sin(u * Math.PI + v * 0.6);
-      const strength = 0.68 + 0.32 * Math.sin(u * 1.7 + v * 1.3 + wave);
-      return { dir, strength };
-    };
+    // Fixed evenly-spaced seed grid spanning the investigation area (~38 km).
+    // Constant count regardless of zoom — cell size adapts, density stays
+    // readable and vectors stay geographically anchored.
+    const N = 6;
+    const R = 0.17; // half-extent in degrees lat (~19 km)
+    const seeds: [number, number][] = [];
+    for (let i = 0; i < N; i++)
+      for (let j = 0; j < N; j++)
+        seeds.push([cx - R + (i * 2 * R) / (N - 1), cy - R + (j * 2 * R) / (N - 1)]);
 
-    // Trace one streamline from a seed through the field: straight backward
-    // half to the field edge, then forward-integrated with local bending.
-    const trace = (
-      seed: [number, number],
-      dirDeg: number,
-      curl: number,
-      wave: number,
-      steps: number
-    ): [number, number][] => {
-      const pts: [number, number][] = [];
-      let [lat, lon] = seed;
-      const a0 = (field(lat, lon, dirDeg, curl, wave).dir * Math.PI) / 180;
-      for (let s = steps / 2; s > 0; s--) {
-        pts.unshift([
-          lat - (s / steps) * R * 0.5 * Math.cos(a0),
-          lon - (s / steps) * R * 0.5 * Math.sin(a0) / Math.cos((lat * Math.PI) / 180),
-        ]);
-      }
-      pts.push([lat, lon]);
-      for (let s = 1; s <= steps / 2; s++) {
-        const { dir } = field(lat, lon, dirDeg, curl, wave);
-        const a = (dir * Math.PI) / 180;
-        lat += (R * 0.0625) * Math.cos(a);
-        lon += ((R * 0.0625) * Math.sin(a)) / Math.cos((lat * Math.PI) / 180);
-        pts.push([lat, lon]);
-      }
-      return splineThrough(pts, 6);
-    };
-
-    // Animated chevron particle riding a streamline.
-    const streamParticle = (
-      pt: [number, number],
-      dirDeg: number,
-      color: string,
-      delayMs: number
-    ): L.Marker =>
-      L.marker(pt, {
-        interactive: false,
-        icon: L.divIcon({
-          className: "",
-          html: `<div style="width:9px;height:9px;display:flex;align-items:center;justify-content:center;transform:rotate(${dirDeg}deg);">
-            <svg width="9" height="9" viewBox="0 0 24 24" class="maris-flow" style="animation-delay:${delayMs}ms">
-              <path d="M6 4 L18 12 L6 20" fill="none" stroke="${color}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>`,
-          iconSize: [9, 9],
-          iconAnchor: [4.5, 4.5],
-        }),
-      });
-
-    const drawStream = (
-      enabled: boolean,
+    // Each cell draws ONE SHORT vector: a few gently-curving body segments
+    // + a solid triangular head, oriented to the local flow direction.
+    const drawVectorField = (
+      group: L.LayerGroup,
       dirDeg: number,
       speedKn: number,
       color: string,
       curl: number,
       wave: number,
-      seeds: [number, number][],
-      weight: number,
-      isWind: boolean
+      kind: "wind" | "current"
     ) => {
-      if (!enabled) return;
-      seeds.forEach((seed, si) => {
-        const line = trace(seed, dirDeg, curl, wave, 26);
-        const meanStrength =
-          line.reduce((acc, p) => acc + field(p[0], p[1], dirDeg, curl, wave).strength, 0) /
-          Math.max(1, line.length);
-        L.polyline(
-          line.map((p) => [p[0], p[1]] as L.LatLngTuple),
-          {
-            color,
-            weight,
-            opacity: 0.18 + meanStrength * 0.4,
-            lineCap: "round",
-            interactive: false,
-          }
-        ).addTo(g);
-        // Particles spaced along the line; shimmer staggered per stream.
-        for (let k = 4; k < line.length - 2; k += 7) {
-          const { dir, strength } = field(line[k][0], line[k][1], dirDeg, curl, wave);
-          streamParticle(
-            [line[k][0], line[k][1]],
-            dir,
-            color,
-            si * 140 + Math.round((1 - strength) * 500)
-          ).addTo(g);
+      // Spatial variation: direction bends coherently across the field
+      // (mesoscale curl); strength ∈ [0.56, 1] scales length + opacity.
+      const field = (lat: number, lon: number) => {
+        const u = (lat - cx) / R;
+        const v = (lon - cy) / R;
+        return {
+          dir: dirDeg + curl * Math.sin(v * Math.PI * 0.9 + u * 0.7 + wave),
+          strength: 0.78 + 0.22 * Math.sin(u * 1.9 + v * 1.4 + wave * 0.7),
+        };
+      };
+      const lonScale = (lat: number) => 1 / Math.cos((lat * Math.PI) / 180);
+      const RAD = Math.PI / 180;
+
+      seeds.forEach(([lat0, lon0]) => {
+        const { dir, strength } = field(lat0, lon0);
+        // Vector length stays BELOW the grid spacing (~7.6 km) so barbs
+        // never overlap into snake-like tracks; ≈ 3–5 km at base zoom.
+        // Geographic length halves per +2 zoom so pixel size stays constant.
+        const lenDeg = ((2.8 + 2.2 * strength) / 111) * Math.pow(2, 11 - z);
+
+        // Integrate 3 short segments through the local field: each segment
+        // follows the local direction at its midpoint, giving a subtle
+        // coherent bend — directionally meaningful, never a long snake.
+        let curLat = lat0;
+        let curLon = lon0;
+        let curDir = dir;
+        const bodyPts: L.LatLngTuple[] = [[curLat, curLon]];
+        const step = lenDeg / 3;
+        for (let s = 0; s < 3; s++) {
+          const mid = field(
+            curLat + Math.cos(curDir * RAD) * step * 0.5,
+            curLon + (Math.sin(curDir * RAD) * step * 0.5) * lonScale(curLat)
+          );
+          curDir = mid.dir;
+          curLat += Math.cos(curDir * RAD) * step;
+          curLon += (Math.sin(curDir * RAD) * step) * lonScale(curLat);
+          bodyPts.push([curLat, curLon]);
         }
+
+        const op = 0.3 + strength * 0.55;
+        L.polyline(bodyPts, {
+          color,
+          weight: 1.6,
+          opacity: op,
+          lineCap: "round",
+          interactive: false,
+        }).addTo(group);
+
+        // Solid triangular head at the integrated tip, oriented to the end
+        // direction. The triangle points +x; a bearing θ maps to screen
+        // rotation θ−90° (bearing 0° = north = up).
+        L.marker([curLat, curLon], {
+          interactive: false,
+          icon: L.divIcon({
+            className: "",
+            html: `<div style="transform:rotate(${curDir - 90}deg);width:8px;height:8px;display:flex;align-items:center;justify-content:center;">
+              <svg width="8" height="8" viewBox="0 0 10 10">
+                <path d="M1 1 L9 5 L1 9 Z" fill="${color}" fill-opacity="${op}"/>
+              </svg>
+            </div>`,
+            iconSize: [8, 8],
+            iconAnchor: [4, 4],
+          }),
+        }).addTo(group);
       });
-      // Instrument chip with the real demo readings.
-      const chipAt: [number, number] = [cx + R * (isWind ? 0.98 : 1.12), cy];
+
+      // One instrument chip per field with the real demo reading.
+      const chipAt: [number, number] = [
+        cx + R * 1.22,
+        cy + R * (kind === "wind" ? -1.22 : 1.22),
+      ];
       L.marker(chipAt, {
         interactive: false,
         icon: L.divIcon({
           className: "",
           html: `<div style="font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:0.14em;color:${color};background:rgba(7,13,22,0.82);border:1px solid ${color}44;padding:2px 7px;border-radius:3px;white-space:nowrap;">
-            ${isWind ? "WIND" : "SURFACE CURRENT"} ${speedKn} kn → ${isWind ? environmental.windDirectionLabel : environmental.currentDirectionLabel}
+            ${kind === "wind" ? "WIND" : "SURFACE CURRENT"} ${speedKn.toFixed(1)} kn → ${kind === "wind" ? environmental.windDirectionLabel : environmental.currentDirectionLabel}
           </div>`,
           iconSize: [170, 16],
           iconAnchor: [85, 8],
         }),
-      }).addTo(g);
+      }).addTo(group);
     };
 
-    const currentSeeds: [number, number][] = [];
-    const windSeeds: [number, number][] = [];
-    for (let i = -2; i <= 2; i++) {
-      // Staggered offsets so streams fan across the area rather than grid.
-      currentSeeds.push([cx + i * R * 0.42 + R * 0.06, cy - R + i * R * 0.04]);
-      windSeeds.push([cx + i * R * 0.5 - R * 0.04, cy - R * 1.08 + i * R * 0.03]);
-    }
+    // Independent field parameters per layer — currents: broad slow
+    // meanders; wind: wavier, finer pattern. Different curl + phase.
+    if (currentEnabled)
+      drawVectorField(
+        gCur,
+        environmental.currentDirection,
+        environmental.currentSpeed,
+        C.current,
+        22,
+        0.8,
+        "current"
+      );
+    if (windEnabled)
+      drawVectorField(
+        gWind,
+        environmental.windDirection,
+        environmental.windSpeed,
+        C.wind,
+        38,
+        2.1,
+        "wind"
+      );
+  }, [environmental, layers, incident, envZoomTick]);
 
-    drawStream(
-      !!currentEnabled,
-      environmental.currentDirection,
-      environmental.currentSpeed,
-      C.current,
-      26, // curl amplitude — coherent arcs
-      0.8,
-      currentSeeds,
-      1.8,
-      false
-    );
-    drawStream(
-      !!windEnabled,
-      environmental.windDirection,
-      environmental.windSpeed,
-      C.wind,
-      40, // wavier pattern
-      2.1,
-      windSeeds,
-      1.3,
-      true
-    );
-  }, [environmental, layers, incident]);
+  // Redraw environmental fields on zoom change so vector barbs keep a
+  // constant pixel size (geographic length shrinks/grows with zoom).
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+    const onZoom = () => setEnvZoomTick((t) => t + 1);
+    map.on("zoomend", onZoom);
+    return () => {
+      map.off("zoomend", onZoom);
+    };
+  }, []);
 
   // Hyperspectral thickness zones — concentric oil-thickness bands centred on
   // the slick axis (thickest at the core, sheen at the rim), with an
